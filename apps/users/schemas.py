@@ -8,7 +8,7 @@ def _clean_phone(v: str) -> str:
     if cleaned.startswith('07'):
         cleaned = '+250' + cleaned[1:]
     if not re.match(r'^\+2507[2389]\d{7}$', cleaned):
-        raise ValueError("Must be 07X XXX XXX or +250 7XX XXX XXX format")
+        raise ValueError("Nimero Igomba kuba 07X XXX XXX cg +250 7XX XXX XXX")
     return cleaned
 
 class UserCreateSchema(Schema):
