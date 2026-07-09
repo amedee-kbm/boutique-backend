@@ -25,6 +25,10 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
 - **Breaking (pre-release)**: login credential is `email`, not `phone_number`. Supersedes the
   phone-login decision recorded in the original build plan. `phone_number` remains a required,
   unique field on the user.
+- Adopted a `src/` layout: `manage.py`, `apps/`, `api/`, and the settings package now live under
+  `src/`, leaving repository furniture (Makefile, Docker files, `.claude/`, `.github/`, `pyproject.toml`)
+  at the root. The Django settings package was renamed `config` → `boutique`; `config` is a generic
+  top-level name that shadows a real PyPI distribution. Celery is now `celery -A boutique`.
 
 ### Removed
 - Engineering scaffolding inherited from [the upstream project](https://github.com/upstream) that described a
@@ -32,4 +36,4 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
   operational scripts. What Zita keeps of that methodology is rewritten from intent, not copied
   (`ADR-0010`).
 
-[Unreleased]: https://github.com/amedee-kbm/zita-boutique-backend/commits/main
+[Unreleased]: https://github.com/amedee-kbm/boutique-backend/commits/main

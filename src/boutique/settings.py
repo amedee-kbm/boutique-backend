@@ -16,11 +16,11 @@ from urllib.parse import urlparse, parse_qsl
 
 import environ
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = BASE_DIR.parent
 
 env = environ.Env()
-env_file = BASE_DIR / ".env"
+env_file = ROOT_DIR / ".env"
 if env_file.exists():
     env.read_env(env_file)
 
@@ -77,7 +77,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "config.urls"
+ROOT_URLCONF = "boutique.urls"
 
 TEMPLATES = [
     {
@@ -94,7 +94,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "config.wsgi.application"
+WSGI_APPLICATION = "boutique.wsgi.application"
 
 
 # Database

@@ -1,7 +1,7 @@
 [project]
-name = "backend"
+name = "boutique-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Zita Boutique backend — Django + django-ninja-extra API"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
