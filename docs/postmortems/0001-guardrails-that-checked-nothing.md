@@ -102,7 +102,7 @@ Both gates were rewritten from their intent rather than repaired:
 
 Every other gate in `make check`, on both halves, was likewise proven red-then-green.
 
-Commits: `2dbcba6` (backend), `efa1f9a` (frontend).
+Commits: `0a85dcd` (backend), `b06de94` (frontend).
 
 ## Lessons Learned
 
