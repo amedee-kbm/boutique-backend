@@ -9,3 +9,13 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Local artifacts
+db.sqlite3
+*.ipynb
+.tests.output
+.tests.output.full
+.coverage
+.coverage.*
+htmlcov/
+.audit-reqs.txt
