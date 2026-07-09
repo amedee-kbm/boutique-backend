@@ -8,7 +8,8 @@ Accepted.
 
 The transplanted apparatus arrived with a full i18n enforcement suite: gettext extraction
 checks on the backend, catalogue validation, a hardcoded-string ratchet with a committed
-baseline, and Paraglide compilation on the frontend. the upstream project ships in four languages.
+baseline, and message compilation on the frontend. It was built for a product that ships in four
+languages.
 
 Zita ships in none. There is no i18n library, no message catalogue, no `.po` file, no locale
 routing.
@@ -18,8 +19,8 @@ rejects a bad number with *"Nimero Igomba kuba 07X XXX XXX cg +250 7XX XXX XXX"*
 feature is called Tubaze. Prices render in RWF. The strings are simply hardcoded, mixed in
 with English, wherever they happen to be needed.
 
-Running the upstream project's i18n gates here would have checked catalogues that do not exist — the precise
-failure of [ADR-0009](0009-a-gate-must-be-seen-to-fail.md).
+Running those gates here would have checked catalogues that do not exist — the precise failure of
+[ADR-0009](0009-a-gate-must-be-seen-to-fail.md).
 
 ## Decision
 

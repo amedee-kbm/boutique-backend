@@ -40,7 +40,7 @@ PgBouncer exhaust the pool and stall every other worker.
 pooler, so the wrong code passes locally, passes in CI, and fails in production on the first
 sweep over a table that has grown. That is why it is written down rather than asserted.
 
-the upstream project learned this the hard way; we inherited the lesson without the outage.
+This lesson arrived with the inherited apparatus. We got it without the outage that produced it.
 
 ---
 
@@ -138,8 +138,8 @@ Whatever proxy sits in front of the frontend must stream. Next's App Router deli
 payloads progressively; a proxy that buffers the whole response before forwarding it converts a
 streaming render into a blank page followed by everything at once.
 
-Inherited from `the upstream infrastructure repository`'s `Caddyfile`, whose comment reads *"MUST NOT buffer responses.
-Buffering breaks SvelteKit's streaming SSR."* Different framework, identical constraint.
+Inherited from an upstream reverse-proxy config whose comment reads *"MUST NOT buffer responses.
+Buffering breaks streaming SSR."* Different framework, identical constraint.
 
 ---
 

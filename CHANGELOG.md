@@ -47,9 +47,8 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
 - The database URL's port was ignored; connections always went to 5432.
 
 ### Removed
-- Engineering scaffolding inherited from [the upstream project](https://github.com/upstream) that described a
-  different product: their CI workflows, observability stack, Locust suite, documentation tree, and
-  operational scripts. What Zita keeps of that methodology is rewritten from intent, not copied
-  (`ADR-0010`).
+- Inherited engineering scaffolding that described a different product: CI workflows, an
+  observability stack, a load-test suite, a documentation tree, and operational scripts. What Zita
+  keeps of that methodology is rewritten from intent, not copied (`ADR-0010`).
 
 [Unreleased]: https://github.com/amedee-kbm/boutique-backend/commits/main

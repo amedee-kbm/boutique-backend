@@ -6,9 +6,9 @@ Accepted.
 
 ## Context
 
-This project's engineering apparatus came from [the upstream project](https://github.com/upstream) — MIT
-licensed, mature, and written by people who had already paid for the lessons it encodes.
-Taking it was the right call. Taking it *as code* was not.
+This project's engineering apparatus came from an existing open-source codebase — MIT licensed,
+mature, and written by people who had already paid for the lessons it encodes. Taking it was the
+right call. Taking it *as code* was not.
 
 Two problems, one legal and one real.
 
@@ -49,15 +49,15 @@ This ADR governs **executable and enforcing artifacts**: gates, build tooling, C
 configuration that drives them. Those are the things whose failure modes are invisible, and
 whose comprehension is the point.
 
-It does **not** currently govern `.claude/` — the agent, command and skill prompts. Those
-remain the upstream project-derived and are being adapted in place rather than rewritten. They instruct a
-model; they do not gate a build, and a misunderstood prompt announces itself in its output
-rather than hiding behind a green tick.
+It does **not** currently govern `.claude/` — the agent, command and skill prompts. Those remain
+derived from the upstream codebase and are being adapted in place rather than rewritten. They
+instruct a model; they do not gate a build, and a misunderstood prompt announces itself in its
+output rather than hiding behind a green tick.
 
 That exemption has a price, and it is the licence question this ADR otherwise dissolves. Before
-either repository is made public, `.claude/` must either be rewritten or carry attribution to
-`the upstream backend repository` and `the upstream frontend repository` (MIT). Recorded here so the choice is
-made deliberately rather than discovered.
+either repository is made public, `.claude/` must either be rewritten or carry the attribution the
+upstream MIT licence requires. Recorded here so the choice is made deliberately rather than
+discovered.
 
 ## Consequences
 
@@ -66,16 +66,15 @@ anyone else's in it to attribute.
 
 Rewriting costs days, not hours. It bought, immediately:
 
-- `check-rsc-token.mjs` guards a boundary (only the BFF may import the token module) rather
-  than a leak shape. the upstream project's version grepped for the two specific expressions their leak had
-  taken. Ours cannot be evaded by a third expression, because there is nothing to evade —
+- `check-rsc-token.mjs` guards a boundary (only the BFF may import the token module) rather than
+  a leak shape. The script it replaces grepped for the two specific expressions one particular
+  leak had taken. Ours cannot be evaded by a third expression, because there is nothing to evade —
   the module is unimportable.
-- `audit-theme-contrast.mjs` parses `oklch`. the upstream project's parses HSL. A port would have found
-  zero tokens in `globals.css` and passed — the exact failure of
+- `audit-theme-contrast.mjs` parses `oklch`. The one it replaces parses HSL. A port would have
+  found zero tokens in `globals.css` and passed — the exact failure of
   [ADR-0009](0009-a-gate-must-be-seen-to-fail.md), reintroduced by the act of copying.
-- `check-licenses.mjs` walks `node_modules` instead of shelling out to `npm query`, because
-  Node 26 refuses to spawn a `.cmd` without a shell. the upstream project's approach does not run here at
-  all.
+- `check-licenses.mjs` walks `node_modules` instead of shelling out to `npm query`, because Node
+  26 refuses to spawn a `.cmd` without a shell. The inherited approach does not run here at all.
 
 Three ports that would have been silently or loudly broken. We only know that because we
 had to read them.

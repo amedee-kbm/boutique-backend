@@ -2,10 +2,9 @@
 
 ## Summary
 
-Zita's engineering apparatus — its checkers, CI, and quality gates — was transplanted from
-[the upstream project](https://github.com/upstream), a mature Django project with a SvelteKit frontend. The
-transplant carried the scripts across intact and dropped them into a codebase with a different
-shape.
+Zita's engineering apparatus — its checkers, CI, and quality gates — was transplanted from an
+existing, mature open-source codebase built on a different frontend framework. The transplant
+carried the scripts across intact and dropped them into a codebase with a different shape.
 
 Two of them landed on nothing and reported success. `check-file-length.sh` searched a `src/`
 directory that did not exist. `check-no-ssr-token.sh` grepped for `.svelte` files and
@@ -80,10 +79,10 @@ were nested). Neither was pushed. The invariants they should have enforced were,
 inspection, held.
 
 The potential impact of the second is what sets the severity. `check-no-ssr-token.sh` existed
-because the upstream project shipped a real leak (`upstream-frontend#387`), where a bearer JWT returned from a
-`load` function was serialized into the page HTML. Under React Server Components the same leak
-is *easier*: any value a Server Component passes as a prop to a Client Component is serialized
-into the Flight payload. No type error, no warning.
+because the project it came from had shipped a real leak: a bearer JWT returned from a `load`
+function, serialized into the page HTML. Under React Server Components the same leak is *easier*:
+any value a Server Component passes as a prop to a Client Component is serialized into the Flight
+payload. No type error, no warning.
 
 Had anyone written that prop, the guard would have said `✓`.
 
@@ -136,5 +135,5 @@ its own author. That is the strongest evidence we have that the rule is worth it
 - [ADR-0009: A gate is not trusted until it has been observed failing](../adr/0009-a-gate-must-be-seen-to-fail.md)
 - [ADR-0010: No third-party code is carried verbatim](../adr/0010-no-third-party-code-verbatim.md)
 - [ADR-0003: Token custody lives in the Next BFF](../adr/0003-token-custody-in-the-bff.md)
-- `upstream-frontend#387` — the original SSR token leak, cited in the header of the script we
-  inherited and could not use.
+- The original SSR token leak that motivated the inherited script — cited in its header, and
+  describing a framework this project does not use.

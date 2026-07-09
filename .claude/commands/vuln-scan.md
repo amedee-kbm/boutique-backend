@@ -5,7 +5,7 @@ allowed-tools: Bash(git ls-files:*), Bash(git diff:*), Bash(git merge-base:*), B
 disable-model-invocation: true
 ---
 
-You are the **orchestrator** for a multi-agent security review of the the upstream project backend. You run in the main session (you can fan out parallel sub-agents; the workers cannot). Your job is to partition the work, dispatch `vuln-analyst` **hunters** and `vuln-verifier` **verifiers**, then consolidate a precise, false-positive-free report. Follow these phases **in order**. Make a task list first.
+You are the **orchestrator** for a multi-agent security review of the Zita Boutique backend. You run in the main session (you can fan out parallel sub-agents; the workers cannot). Your job is to partition the work, dispatch `vuln-analyst` **hunters** and `vuln-verifier` **verifiers**, then consolidate a precise, false-positive-free report. Follow these phases **in order**. Make a task list first.
 
 User arguments (may be empty): **$ARGUMENTS**
 
@@ -16,7 +16,7 @@ User arguments (may be empty): **$ARGUMENTS**
 **Parse `$ARGUMENTS`:**
 - **scope** (first non-flag token):
   - empty or `full` → **full-codebase sweep** (default): dispatch a hunter for every region in the map below.
-  - an app or path (e.g. `accounts`, `events/service`, `src/wallet`) → **single-region**: dispatch one hunter scoped to that path (pick its model tier from the map, or by risk if it's a sub-path).
+  - an app or path (e.g. `users`, `apps/users/services.py`, `src/api`) → **single-region**: dispatch one hunter scoped to that path (pick its model tier from the map, or by risk if it's a sub-path).
   - `diff` → **branch-diff scope**: run `git merge-base main HEAD` then `git diff --name-only $(git merge-base main HEAD) HEAD -- src/`. Map each changed file to its region; dispatch hunters **only** for regions with changes, and instruct each to focus on the changed files **plus** the dependencies they trace into.
 - **flags:**
   - `--fast` → override all hunter models to **sonnet**.
@@ -25,27 +25,23 @@ User arguments (may be empty): **$ARGUMENTS**
   - default (no model flag) → use the **tiered** models in the region map.
 
 **Reconcile the region map with the live tree** (catches newly-added apps/modules):
-- Run `git ls-files 'src/*/apps.py'` to list Django apps, and `git ls-files 'src/events/*/__init__.py'` for events sub-packages.
+- Run `git ls-files 'src/apps/*/apps.py'` to list Django apps for events sub-packages.
 - If an app/module exists in the tree but is **not** covered by any region's globs below, create an ad-hoc region for it: globs `src/<name>/**`, default model **sonnet**, surfaces = the full framework, risk MEDIUM. Note in the final report that an unmapped module was discovered (so the map can be updated).
 
 **Region map** (priority-ordered; `model` is the default/tiered choice, overridden by `--fast`/`--deep`):
 
 | Region | Globs | Focus surfaces | Risk | Model |
 |---|---|---|---|---|
-| accounts | `src/accounts/**` | Auth & JWT, registration/verification, GDPR export/erasure, impersonation, mass-assignment on user fields | CRITICAL | opus |
-| events-service | `src/events/service/**` | Ticket/payment/checkout logic, eligibility, invitations, **race conditions** (`select_for_update`, `get_or_create_with_race_protection`), state machines, `transaction.on_commit` correctness | CRITICAL | opus |
-| events-controllers | `src/events/controllers/**` | Authz/BOLA/IDOR, tenant isolation, optional-auth abuse, throttling on mutations, permission-class chain | HIGH | opus |
-| events-models | `src/events/models/**`, `src/events/constants/**` | Permission model (`has_org_permission`, `PermissionMap`), state-machine constraints, model `clean()`/`save()` validation | HIGH | opus |
-| events-schema | `src/events/schema/**` | Mass assignment, sensitive-field exposure in input/output schemas | MEDIUM | sonnet |
-| questionnaires | `src/questionnaires/**` | Access-gate bypass, LLM prompt injection (concrete new bypass only), submission/ownership validation | HIGH | opus |
-| common | `src/common/**` | Base models, auth utilities, file handling (MIME/ClamAV/EXIF), exception handlers, `get_or_create_with_race_protection` | HIGH | opus |
-| notifications | `src/notifications/**` | Unsubscribe-token handling, digest/eligibility logic, PII in email payloads | MEDIUM | sonnet |
-| wallet | `src/wallet/**` | `.pkpass` forgery/tampering, path traversal, ticket-scoping of pass generation | MEDIUM | sonnet |
-| telegram | `src/telegram/**` | Bot FSM state abuse, token/secret handling, command authorization | MEDIUM | sonnet |
-| events-admin | `src/events/admin/**`, `src/events/utils/**`, `src/events/management/**` | Admin-gated operations, management-command safety | LOW | sonnet |
-| geo+api+polls | `src/geo/**`, `src/api/**`, `src/polls/**` | IP geolocation trust, global rate-limit/exception config, poll authz | LOW | sonnet |
+| users-auth | `src/apps/users/controllers/**`, `src/apps/users/services.py`, `src/apps/users/schemas.py` | The seller gate (401 vs 403, missing `IsSeller`), mass assignment on `is_seller`/`is_staff`, account enumeration on password reset, refresh-token rotation and blacklisting, registration races | HIGH | opus |
+| users-model | `src/apps/users/models.py`, `src/apps/users/managers.py`, `src/apps/users/migrations/**` | Privileged defaults in `create_user`/`create_superuser`, uniqueness constraints as the real gate, field-level exposure | HIGH | opus |
+| catalog | `src/apps/products/**` | Visibility enforced on the *write* path, not only the read path; slug handling; object keys derived from user input (path traversal, extension/MIME confusion) | HIGH | opus |
+| api+permissions | `src/api/**` | Permission classes, global exception handlers (stack-trace leakage), CORS allow-list, throttling | HIGH | opus |
+| tasks | `src/apps/*/tasks.py` | Task authorization context, `transaction.on_commit` correctness, silent failures leaving inconsistent state, secrets in task arguments | MEDIUM | sonnet |
+| config | `src/boutique/**` | `DEBUG` handling, `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`, secret loading, JWT lifetimes, database options | MEDIUM | sonnet |
 
-For a single-region scope that is a sub-path not listed (e.g. `events/templatetags`), use globs = that path, surfaces = full framework, model = sonnet (or per `--deep`).
+Regions for apps that do not exist yet — `orders`, `favorites` — are added here when those apps land. `orders` will be **HIGH**: it is unauthenticated by design and carries the customer's contact details.
+
+For a single-region scope that is a sub-path not listed (e.g. `apps/users/migrations`), use globs = that path, surfaces = full framework, model = sonnet (or per `--deep`).
 
 Build the **dispatch plan**: a list of `(region, globs, focus surfaces, model)`. Show it to the user as a short table before dispatching.
 

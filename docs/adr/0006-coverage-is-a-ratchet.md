@@ -6,8 +6,8 @@ Accepted.
 
 ## Context
 
-the upstream project enforces 90% branch coverage in CI. Zita's backend, at the moment the gate was
-installed, had zero tests and about 450 lines of application code.
+The inherited configuration enforced 90% branch coverage in CI. Zita's backend, at the moment the
+gate was installed, had zero tests and about 450 lines of application code.
 
 Adopting 90% would have meant one of two things. Either we write enough tests to clear it —
 achievable on 450 lines, and it says nothing about the code not yet written. Or the number

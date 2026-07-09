@@ -6,15 +6,16 @@ Accepted.
 
 ## Context
 
-the upstream project is three repositories: `upstream-backend`, `upstream-frontend`, and `infra`. The application
-repositories build a container image and push it to a registry. The infra repository holds
-`docker-compose.yml`, a `Caddyfile`, an interactive `setup.sh`, and the observability stack —
-and consumes the published image tag.
+The apparatus this project inherited came from a three-repository arrangement: a backend, a
+frontend, and a third repository holding infrastructure — `docker-compose.yml`, a reverse-proxy
+config, an interactive `setup.sh`, and an observability stack. The application repositories build
+a container image and push it to a registry; the infrastructure repository consumes the published
+tag.
 
 The image is the interface. The application never knows where it runs.
 
-It is a clean separation, and it explains much of what was inherited: their `publish.yaml`
-pushes to `an upstream container registry` and stops, and `backend/observability/` turned out to be a
+It is a clean separation, and it explains much of what arrived here: the inherited publish
+workflow pushes an image to a registry and stops, and `backend/observability/` turned out to be a
 copy of that third repository's directory, describing a cluster Zita does not have.
 
 ## Decision
@@ -46,7 +47,7 @@ We revisit this the moment a second environment exists — staging, or a second 
 the deploy target becomes something the application repository genuinely should not know
 about.
 
-One note worth keeping from `the upstream infrastructure repository`, whose `Caddyfile` warns: *"MUST NOT buffer
-responses. Buffering breaks SvelteKit's streaming SSR."* Next's App Router streams RSC
-payloads the same way. Whatever proxy sits in front of the Next app, that constraint applies.
-It is recorded in [engineering-notes.md](../engineering-notes.md), because it is not lintable.
+One note worth keeping from that inherited infrastructure, whose reverse-proxy config warns:
+*"MUST NOT buffer responses. Buffering breaks streaming SSR."* Next's App Router streams RSC
+payloads the same way. Whatever proxy sits in front of the Next app, that constraint applies. It
+is recorded in [engineering-notes.md](../engineering-notes.md), because it is not lintable.

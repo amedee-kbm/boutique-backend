@@ -9,8 +9,8 @@ Accepted.
 Every transplanted Makefile target and CI workflow assumed pnpm. The frontend has used npm
 since its first commit, with a `package-lock.json` and 120 commits of history behind it.
 
-Adopting pnpm would have ported the upstream project's `check-licenses.mjs` (`pnpm licenses list --json`),
-their `deps.yml` workflows, and their dependabot cooldown configuration unchanged.
+Adopting pnpm would have ported the inherited `check-licenses.mjs` (`pnpm licenses list --json`),
+the `deps.yml` workflows, and the dependabot cooldown configuration unchanged.
 
 ## Decision
 

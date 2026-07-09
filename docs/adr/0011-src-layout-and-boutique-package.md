@@ -48,9 +48,9 @@ rather than claim a rationale we do not have.
 
 `pytest` needs `pythonpath = "src"`, `mypy` needs `mypy_path = ["./src"]`, and every Makefile
 target runs `python src/manage.py`. All of that was going to be written from scratch anyway
-under [ADR-0010](0010-no-third-party-code-verbatim.md) — and, an accident but a welcome one,
-it happens to match the upstream project's own layout, so their `pyproject` configuration values ported
-directly.
+under [ADR-0010](0010-no-third-party-code-verbatim.md) — and, an accident but a welcome one, it
+happens to match the layout the inherited `pyproject` configuration already assumed, so those
+values ported directly.
 
 Adding `src/api/__init__.py` and `src/api/v1/__init__.py` was required: they were implicit
 namespace packages, which works at runtime but made mypy see every module under two names.

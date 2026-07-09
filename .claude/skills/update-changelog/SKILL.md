@@ -13,7 +13,7 @@ Maintains `CHANGELOG.md` (Keep a Changelog format, semver) by reconciling it aga
 - Header: `## [X.Y.Z] - YYYY-MM-DD` for released versions, `## [Unreleased]` at the top.
 - Section order: **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**, **Security**. Omit empty sections.
 - Bullets describe **user/operator/API-consumer impact**, not internal refactors. Drop pure CI/test/lint commits unless they change observable behavior.
-- Major features get a bold prefix: `- **VAT Support**: Complete VAT handling for ticket sales…`. Optional nested sub-bullets for sub-features.
+- Major features get a bold prefix: `- **Guest orders**: a customer orders without an account…`. Optional nested sub-bullets for sub-features.
 - Bug fixes name the symptom that was fixed, not the patch ("`location_maps_url` max length increased from 200 to 2048 to accommodate long Google Maps URLs").
 - Dates are the **tag date** (committer date of the tag), not today's date.
 
@@ -73,7 +73,7 @@ Verify the user-facing surface:
 
 - New endpoints / changed schemas → check `events/controllers/`, `accounts/controllers/`, `*/schema/`, `openapi.json` if regenerated.
 - New models or migrations → check `*/models/`, `*/migrations/00XX_*.py` (squashed migrations matter for ops).
-- Settings or env vars → check `src/upstream/settings/`, `.env*`, `CLAUDE.md`.
+- Settings or env vars → check `src/boutique/settings.py`, `.env*`, `CLAUDE.md`.
 - Background jobs / Celery → check `*/tasks.py`, `celery.py` beat schedule.
 - Permissions / auth → check `events/controllers/permissions.py`, `common/auth/`.
 
@@ -98,19 +98,20 @@ Style examples lifted from this repo's existing entries — match the voice:
 
 ```markdown
 ### Added
-- **Referral System — Full Launch**: Complete referral program with Stripe auto-payouts
-  - `UserBillingProfile` model for referrer billing details (VAT ID, address, self-billing agreement)
-  - Monthly payout calculation task aggregating net platform fees per referral
-- VAT preview endpoint for checkout (`POST /events/{event_id}/tickets/vat-preview`) with buyer-specific VAT calculation and VIES caching (Redis, 30-minute TTL)
+- **Guest orders**: a customer places a no-pay order from their Selection without an account
+  - `Order` and `OrderItem` models, with snapshot columns so a line still renders after the product changes
+  - `POST /storefront/orders/` (public) and `PATCH /orders/{id}/status/` (seller only)
+- Seller gate on every admin endpoint: a valid token belonging to a non-seller now receives 403, not 401
 
 ### Fixed
-- Unbanning a user now clears the stale `BANNED` `OrganizationMember` row that the ban created.
-- Follower notifications (`NEW_EVENT_FROM_FOLLOWED_ORG`) no longer sent for non-public events
+- Hiding a product removes it from the storefront feed, its category, and search; its detail page 404s
+- Password reset answers identically for a known and an unknown email, so it no longer reveals which
+  addresses have accounts
 ```
 
 Rules:
 
-- Lead with the *what*, not the *how*. ("Discord admin-ping channel" not "Added `discord_admin_webhook_url` setting and `send_discord_admin_ping` function").
+- Lead with the *what*, not the *how*. ("Sellers can hide a product" not "Added a `visible` boolean and a `PATCH /products/{id}/visibility/` endpoint").
 - Backticks for code symbols (model names, field names, env vars, endpoints).
 - Bold prefix `**Name**:` only for headline features that warrant top-billing.
 - One sentence per bullet; sub-bullets for multi-part features.

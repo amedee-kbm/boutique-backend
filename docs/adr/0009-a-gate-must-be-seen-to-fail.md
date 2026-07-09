@@ -6,10 +6,9 @@ Accepted.
 
 ## Context
 
-Zita's engineering apparatus was transplanted from [the upstream project](https://github.com/upstream), a
-mature Django project. The transplant carried the upstream project's checkers across intact — their
-enforcement paths, their exit codes, their green checkmarks — into a codebase with a
-different shape.
+Zita's engineering apparatus was transplanted from an existing, mature Django project. The
+transplant carried its checkers across intact — their enforcement paths, their exit codes, their
+green checkmarks — into a codebase with a different shape.
 
 Two of them landed on nothing.
 

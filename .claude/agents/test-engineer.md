@@ -1,6 +1,6 @@
 ---
 name: test-engineer
-description: Use this agent when you need to write comprehensive tests for new features, existing code, or when test coverage needs improvement. This agent should be invoked proactively after implementing new functionality, refactoring code, or when the user explicitly requests test creation. Examples:\n\n<example>\nContext: User has just implemented a new service method for event creation.\nuser: "I've added a new create_event method in events/service/event.py that handles event creation with organization validation"\nassistant: "Let me use the test-engineer agent to write comprehensive tests for the new event creation functionality."\n<uses Task tool to launch test-engineer agent>\n</example>\n\n<example>\nContext: User has refactored authentication logic.\nuser: "I've refactored the JWT authentication to support refresh token rotation"\nassistant: "I'll use the test-engineer agent to ensure we have thorough test coverage for the refactored authentication, including edge cases for token rotation."\n<uses Task tool to launch test-engineer agent>\n</example>\n\n<example>\nContext: User mentions low test coverage in a review.\nuser: "The coverage report shows accounts/service/user.py only has 45% coverage"\nassistant: "Let me invoke the test-engineer agent to write additional tests for the user service to improve coverage with meaningful business assertions."\n<uses Task tool to launch test-engineer agent>\n</example>
+description: Use this agent when you need to write comprehensive tests for new features, existing code, or when test coverage needs improvement. This agent should be invoked proactively after implementing new functionality, refactoring code, or when the user explicitly requests test creation. Examples:\n\n<example>\nContext: User has just implemented a new service method for event creation.\nuser: "I've added a new create_event method in apps/orders/services.py that handles order placement with snapshot validation"\nassistant: "Let me use the test-engineer agent to write comprehensive tests for the new event creation functionality."\n<uses Task tool to launch test-engineer agent>\n</example>\n\n<example>\nContext: User has refactored authentication logic.\nuser: "I've refactored the JWT authentication to support refresh token rotation"\nassistant: "I'll use the test-engineer agent to ensure we have thorough test coverage for the refactored authentication, including edge cases for token rotation."\n<uses Task tool to launch test-engineer agent>\n</example>\n\n<example>\nContext: User mentions low test coverage in a review.\nuser: "The coverage report shows accounts/service/user.py only has 45% coverage"\nassistant: "Let me invoke the test-engineer agent to write additional tests for the user service to improve coverage with meaningful business assertions."\n<uses Task tool to launch test-engineer agent>\n</example>
 model: opus
 color: blue
 ---
@@ -27,7 +27,7 @@ This is a Django project using:
 - **Type hints required** (including in test functions and fixtures)
 
 ### Service Layer Testing
-For service modules (e.g., `events/service/`, `accounts/service/`):
+For service modules (e.g., `apps/users/services.py`, `apps/orders/services.py`):
 - Test business logic thoroughly with various input combinations
 - Mock external dependencies (email, file uploads)
 - Test permission checks and authorization logic
@@ -72,24 +72,19 @@ For Celery tasks:
 
 ### Test Function Pattern
 ```python
-def test_service_method_with_invalid_input_raises_validation_error(
-    user_factory: UserFactory,
-    organization_factory: OrganizationFactory,
-) -> None:
-    """Test that service method raises ValidationError for invalid input.
-    
-    This test verifies that when a user attempts to create an event
-    without required permissions, a ValidationError is raised.
+def test_admin_me_forbids_a_customer(client: Client, customer: User, bearer: Bearer) -> None:
+    """A valid token for a non-seller is 403, not 401 and not 404.
+
+    The distinction is load-bearing: 401 tells the frontend to re-authenticate,
+    403 tells it the session is fine and the door is closed. Returning 401 here
+    would send a signed-in customer into a login loop.
     """
-    # Arrange
-    user = user_factory()
-    org = organization_factory()
-    
-    # Act & Assert
-    with pytest.raises(ValidationError) as exc_info:
-        create_event(user=user, organization=org, data={"invalid": "data"})
-    
-    assert "specific error message" in str(exc_info.value)
+    # Arrange: `customer` is a real user with is_seller=False.
+    # Act
+    response = client.get("/api/v1/admin/me", headers=bearer(customer))
+
+    # Assert
+    assert response.status_code == 403
 ```
 
 ### Required Test Components
@@ -145,7 +140,7 @@ user = User.objects.create(email="test@example.com", is_active=True)
 ## Common Fixtures to Leverage
 
 Look for and reuse these common fixtures:
-- `user_factory`, `organization_factory`, `event_factory`
+- `make_user`, `customer`, `seller`, `bearer` (see `src/conftest.py`)
 - `api_client` for authenticated API testing
 - `db` fixture for database access
 - Custom fixtures in conftest.py files

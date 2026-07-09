@@ -5,7 +5,7 @@ allowed-tools: Bash(git ls-files:*), Bash(git diff:*), Bash(git merge-base:*), B
 disable-model-invocation: true
 ---
 
-You are the **orchestrator** for a multi-agent technical-debt assessment of the the upstream project backend. You run in the main session (you can fan out parallel sub-agents; the workers cannot). Your job is to partition the work, dispatch `tech-debt-assessor` **hunters** and `tech-debt-verifier` **verifiers**, then consolidate a precise, scored, false-positive-free report and **write it to disk by default**. Follow these phases **in order**. Make a task list first.
+You are the **orchestrator** for a multi-agent technical-debt assessment of the Zita Boutique backend. You run in the main session (you can fan out parallel sub-agents; the workers cannot). Your job is to partition the work, dispatch `tech-debt-assessor` **hunters** and `tech-debt-verifier` **verifiers**, then consolidate a precise, scored, false-positive-free report and **write it to disk by default**. Follow these phases **in order**. Make a task list first.
 
 User arguments (may be empty): **$ARGUMENTS**
 
@@ -16,7 +16,7 @@ User arguments (may be empty): **$ARGUMENTS**
 **Parse `$ARGUMENTS`:**
 - **scope** (first non-flag token):
   - empty or `full` → **full-repo sweep** (default): dispatch a hunter for every region in the map below **plus** all specialist hunters.
-  - an app or path (e.g. `accounts`, `events/service`, `src/wallet`) → **single-region**: dispatch one hunter scoped to that path (pick its model tier from the map, or by size/risk if it's a sub-path). Skip the specialists unless the path is repo-wide.
+  - an app or path (e.g. `users`, `apps/users/services.py`, `src/api`) → **single-region**: dispatch one hunter scoped to that path (pick its model tier from the map, or by size/risk if it's a sub-path). Skip the specialists unless the path is repo-wide.
   - `diff` → **branch-diff scope**: run `git merge-base main HEAD` then `git diff --name-only $(git merge-base main HEAD) HEAD -- src/`. Map each changed file to its region; dispatch hunters **only** for regions with changes, instructing each to focus on the changed files **plus** the dependencies they trace into. Also run the `consistency-standards` specialist if more than one region changed.
 - **flags:**
   - `--fast` → override all hunter models to **sonnet**.
@@ -29,7 +29,7 @@ User arguments (may be empty): **$ARGUMENTS**
 - Production LOC & file count: e.g. `git ls-files 'src/**/*.py' | grep -v migrations | grep -v tests | wc -l` and a `cloc src` if available (else `wc -l`).
 - `grep -rEc "TODO|FIXME|HACK|XXX" src` (sum), `grep -rc "type: ignore" src`, `grep -rc "from typing import" src`, count of `# ponytail:` ceilings.
 - Migration count per app: `git ls-files 'src/*/migrations/0*.py' | sed ...` (rough per-app tally).
-- Files near the 1000-line cap: `git ls-files 'src/**/*.py' | xargs wc -l | sort -rn | head -20`.
+- Files near the 500-line cap: `git ls-files 'src/**/*.py' | xargs wc -l | sort -rn | head -20`.
 - Open issues for context: `gh issue list --state open --limit 100` and `gh issue list --state open --label bug --limit 50`. Catalog by category. **Cross-reference in Phase 5** — don't report a known, tracked issue as a fresh discovery.
 
 **Reconcile the region map with the live tree** (catches newly-added apps/modules):
@@ -40,18 +40,10 @@ User arguments (may be empty): **$ARGUMENTS**
 
 | Region | Globs | Focus dimensions | Model |
 |---|---|---|---|
-| accounts | `src/accounts/**` | Service/controller layering, auth-flow complexity, type safety, dead code, GDPR-flow duplication | sonnet |
-| events-service | `src/events/service/**` | God functions, cyclomatic/cognitive complexity hotspots, duplication, service-pattern adherence, error handling | opus |
-| events-controllers | `src/events/controllers/**` | Thin-controller adherence (business logic leaking into views), duplication across controllers, pattern consistency, permission-chain clarity | opus |
-| events-models | `src/events/models/**`, `src/events/constants/**` | Fat models, model-design quality, indexes/constraints, dead model fields, models importing services | sonnet |
-| events-schema | `src/events/schema/**` | ModelSchema conventions, enum/AwareDatetime adherence, schema duplication, re-export hygiene | sonnet |
-| events-support | `src/events/admin/**`, `src/events/utils/**`, `src/events/management/**`, `src/events/tasks/**`, `src/events/templatetags/**` | Dead code, utils sprawl, management-command quality, Celery-task hygiene | sonnet |
-| questionnaires | `src/questionnaires/**` | Complexity, LLM-eval code quality, layering, dead code | sonnet |
-| common | `src/common/**` | Utility sprawl, base-model & mixin design, dead helpers, abstraction level | sonnet |
-| notifications | `src/notifications/**` | Channel-abstraction quality, digest/preference complexity, duplication | sonnet |
-| wallet+telegram | `src/wallet/**`, `src/telegram/**` | FSM complexity, dead code, file-handling clarity | sonnet |
-| geo+polls+moderation | `src/geo/**`, `src/polls/**`, `src/moderation/**` | Layering, dead code, cross-app consistency | sonnet |
-| api+config | `src/api/**`, `src/upstream/**` | Settings organization, global config sprawl, exception-handler wiring | sonnet |
+| users | `src/apps/users/**` | Service/controller layering, auth-flow complexity, type safety, dead code | sonnet |
+| catalog | `src/apps/products/**` | Scaffold vs implementation, model design, indexes and constraints, dead code | sonnet |
+| api+config | `src/api/**`, `src/boutique/**` | Settings organization, global config sprawl, exception-handler design, permission-class clarity | sonnet |
+| tests | `src/conftest.py`, `src/apps/*/tests/**` | Fixture reuse, assertions that assert behaviour rather than lines, mocks that hide the thing under test | sonnet |
 
 **Specialist map** (cross-cutting hunters; run on `full` scope, and selectively on `diff`). These read broadly but shallowly and own a single dimension across the whole tree:
 
@@ -130,7 +122,7 @@ Report format:
 ```
 # Technical Debt Assessment Report
 **Date**: <YYYY-MM-DD>
-**Repository**: upstream-backend
+**Repository**: boutique-backend
 **Version assessed**: <version> (HEAD <short-sha>)
 **Scope**: <full | path | diff> · <N> region(s) + <M> specialist(s) reviewed (<models used>)
 **Previous assessments**: <from memory, e.g. 8.2/10 (2026-06-23) · 8.0/10 (2026-05-15)>
@@ -185,7 +177,7 @@ Report format:
 - Total production Python files / LOC
 - Test files
 - TODO/FIXME/HACK count · type: ignore count · from-typing-import violations · ponytail ceilings
-- Files within 50 lines of the 1000-line cap
+- Files within 50 lines of the 500-line cap
 - Open GitHub issues: X (Y bugs, Z features, W debt)
 
 ## Notes

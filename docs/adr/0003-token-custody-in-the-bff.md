@@ -22,9 +22,10 @@ There is no type error. There is no warning. The token simply appears in view-so
 streamed response, in proxy logs, and in the browser's back/forward cache.
 
 The boundary that leaks is a prop. It does not look like a boundary. In a classic SSR
-framework the leak at least has a name — the upstream project's SvelteKit frontend shipped one in
-`upstream-frontend#387`, where a bearer JWT returned from a `load` function was serialized into
-the page HTML. In RSC the same leak is available from any Server Component, silently.
+framework the leak at least has a shape you can name: a `load` function returns the token, and
+the framework serializes its return value into the page HTML. That mistake has been shipped, and
+written up, many times. Under RSC the same leak is available from any Server Component, with no
+function signature to point at.
 
 ## Decision
 
