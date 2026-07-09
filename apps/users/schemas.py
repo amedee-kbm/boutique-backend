@@ -1,7 +1,11 @@
 # schemas.py
 import re
-from ninja import Schema
-from pydantic import field_validator
+
+from ninja import ModelSchema, Schema
+from pydantic import EmailStr, field_validator
+
+from apps.users.models import User
+
 
 def _clean_phone(v: str) -> str:
     cleaned = re.sub(r'[\s\-\(\)]', '', v)
@@ -11,22 +15,35 @@ def _clean_phone(v: str) -> str:
         raise ValueError("Nimero Igomba kuba 07X XXX XXX cg +250 7XX XXX XXX")
     return cleaned
 
-class UserCreateSchema(Schema):
+
+class RegisterSchema(Schema):
     name: str
-    phone_number: str
-
-    @field_validator("phone_number")
-    @classmethod
-    def validate_phone(cls, v: str) -> str:
-        return _clean_phone(v)
-
-class LoginSchema(Schema):
+    email: EmailStr
     phone_number: str
     password: str
 
     @field_validator("phone_number")
-    @classmethod
     def validate_phone(cls, v: str) -> str:
         return _clean_phone(v)
 
 
+class PasswordResetRequestSchema(Schema):
+    email: EmailStr
+
+
+class PasswordResetConfirmSchema(Schema):
+    uid: str
+    token: str
+    password: str
+
+
+class CurrentUserSchema(ModelSchema):
+    class Meta:
+        model = User
+        fields = ["id", "email", "phone_number", "name", "is_seller"]
+
+
+class AuthResponseSchema(Schema):
+    user: CurrentUserSchema
+    access: str
+    refresh: str

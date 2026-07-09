@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse, parse_qsl
 
@@ -28,14 +29,27 @@ if env_file.exists():
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-cvzggr154al_mse#hv15!!p7btol5=#1i7nop^m+71d+j8j9*n"
+SECRET_KEY = env.str("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool("DJANGO_DEBUG")
 
-ALLOWED_HOSTS = []
+FRONTEND_URL = env.str("FRONTEND_URL")
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
+CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
+APPEND_SLASH = env.bool("DJANGO_APPEND_SLASH")
 
+if DEBUG:
+    ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+
+SITE_ID = 1
 # Application definition
 
 INSTALLED_APPS = [
@@ -47,6 +61,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "ninja_extra",
+    "ninja_jwt",
+    "ninja_jwt.token_blacklist",
+    "apps.users",
 ]
 
 MIDDLEWARE = [
@@ -117,6 +134,10 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Login is by email (USERNAME_FIELD), so Django's default backend suffices for now.
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",   # default in Django's global_settings.py, duplicated here for clarity
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -134,3 +155,47 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+AUTH_USER_MODEL = "users.User"
+
+
+# JSON Web Tokens (django-ninja-jwt)
+# Lifetimes are aligned with the frontend auth cookie maxAge (frontend/src/lib/auth.ts).
+# The Next BFF refreshes on 401, so rotation is safe: each /auth/refresh mints a
+# new refresh token and blacklists the old one (single-use). Login keys off
+# USERNAME_FIELD (email) via the default ninja_jwt schema — no custom input schema.
+NINJA_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+}
+
+# Email (password recovery). Defaults to the console backend for local dev — set
+# EMAIL_BACKEND to the SMTP backend and fill the GoDaddy creds in .env for real
+# sending. GoDaddy Workspace: smtpout.secureserver.net:465 (SSL); GoDaddy M365:
+# smtp.office365.com:587 (TLS).
+EMAIL_BACKEND = env.str(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = env.str("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env.str("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env.str("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+DEFAULT_FROM_EMAIL = env.str(
+    "DEFAULT_FROM_EMAIL", default="Zita Boutique <no-reply@amedeyo.com>"
+)
+
+
+# Celery — offloads the SMTP send so /auth/password/reset-request returns
+# immediately. Broker is Redis. Set CELERY_TASK_ALWAYS_EAGER=True to run tasks
+# inline (no broker/worker needed) for local dev or tests.
+CELERY_BROKER_URL = env.str("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+
