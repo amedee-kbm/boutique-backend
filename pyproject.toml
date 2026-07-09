@@ -1,7 +1,7 @@
 [project]
 name = "boutique-backend"
 version = "0.1.0"
-description = "Zita Boutique backend — Django + django-ninja-extra API"
+description = "Boutique backend — Django + django-ninja-extra API"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,9 +10,168 @@ dependencies = [
     "django-cors-headers>=4.9.0",
     "django-environ>=0.14.0",
     "django-ninja>=1.6.2",
+    "django-ninja-extra>=0.30.0",
     "django-ninja-jwt>=5.4.4",
     "django-storages[s3]>=1.14.6",
     "psycopg[binary]>=3.3.4",
     "pydantic[email]>=2.13.4",
+]
+
+# Quality tooling only. Nothing here ships to production; nothing here is
+# speculative. Every entry is invoked by a `make` target.
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "celery-types>=0.24.0",
+    "coverage>=7.13.3",
+    "django-stubs[compatible-mypy]>=5.2.9",
+    "faker>=40.1.2",
+    "freezegun>=1.5.5",
+    "licensecheck>=2025.1.0",
+    "mypy>=1.19.1",
+    "pip-audit>=2.10.0",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "pytest-django>=4.11.1",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.15.20",
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ruff — formatter and linter
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "*/migrations/*",
+]
+
+[tool.ruff.lint]
+# D  = pydocstyle (Google convention)   T201 = no bare print()
+# I  = import sorting                   C90  = mccabe complexity
+select = ["C", "D", "E", "F", "I", "W", "T201", "UP"]
+# D100 module, D101 class, D104 package, D105 magic method, D106 nested class.
+# Docstrings are for things whose contract is not obvious from the name.
+ignore = ["D100", "D101", "D104", "D105", "D106"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*.py" = ["D", "E501"]
+"**/tests/*.py" = ["D"]
+"**/admin.py" = ["D102"]
+"conftest.py" = ["D"]
+"manage.py" = ["D"]
+"scripts/*.py" = ["T201"]  # a gate that cannot report its finding is useless
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# mypy — strict. Invoked with --strict from the Makefile, not configured here,
+# so the flags are visible at the call site.
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.mypy]
+mypy_path = ["./src"]
+plugins = ["mypy_django_plugin.main"]
+exclude = ["(?x)(^.*/migrations/.*\\.py$)"]
+
+[tool.django-stubs]
+django_settings_module = "boutique.settings"
+disable_error_code = ["django-manager-missing"]
+
+# Third-party packages that ship no type information. Prune this list when a
+# dependency starts shipping py.typed — do not let it accumulate.
+[[tool.mypy.overrides]]
+module = ["ninja_extra.*", "ninja_jwt.*", "environ.*"]
+ignore_missing_imports = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# pytest
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+pythonpath = "src"
+DJANGO_SETTINGS_MODULE = "boutique.settings"
+testpaths = ["src"]
+addopts = "--strict-markers"
+norecursedirs = [".*", "build", "dist", "node_modules", ".venv"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# coverage — branch coverage over the source tree.
+#
+# `fail_under` is a RATCHET, not an aspiration (ADR-0006). It is set to what the
+# suite genuinely achieves today. Raise it when coverage rises; never lower it
+# to make a red build green.
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "src/manage.py",
+    "src/boutique/asgi.py",
+    "src/boutique/wsgi.py",
+    "src/boutique/settings.py",
+    "src/*/admin.py",
+    "src/*/*/admin.py",
+    "src/*/*/migrations/*",
+    "src/*/*/tests/*",
+]
+
+[tool.coverage.report]
+# Measured, not aspired to: 92% is what the auth suite achieves today. Raise it
+# as code lands. Lowering it to make a red build green defeats the purpose.
+fail_under = 92
+show_missing = true
+skip_covered = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# bandit — SAST. Tests are excluded: `assert` is the point there.
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.bandit]
+exclude_dirs = ["src/apps/*/tests", "src/conftest.py"]
+skips = ["B101"]  # assert_used
+
+# ─────────────────────────────────────────────────────────────────────────────
+# licensecheck — keeps copyleft and source-available licences out of the tree.
+# `zero = true` makes a forbidden licence fail the build rather than warn.
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.licensecheck]
+zero = true
+groups = ["dev"]
+fail_licenses = [
+    "GPL-2.0*",
+    "GPL-3.0*",
+    "AGPL*",
+    "AGPL-3.0*",
+    "SSPL*",
+    "BUSL*",
+    "Business Source License*",
+    "Commons-Clause",
+    "Commons Clause*",
+]
+
+# Reviewed exceptions. Each needs a reason; an entry without one is a hole, not
+# an exemption. Re-review when the dependency's licence changes.
+#
+# Note also: psycopg is LGPL-3.0-only. It passes because we import it, do not
+# modify it, and never distribute this application as a binary — an LGPL library
+# used that way imposes no obligation on our source. If Zita ever ships a
+# redistributable artifact, revisit that.
+ignore_packages = [
+    # MPL-2.0 is file-level copyleft: it binds only files taken from the project
+    # itself, which we neither modify nor redistribute. Both are transitive and
+    # unavoidable — certifi is the CA bundle behind every HTTPS call in Python.
+    "certifi",
+    "pathspec",
 ]

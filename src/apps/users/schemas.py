@@ -8,10 +8,10 @@ from apps.users.models import User
 
 
 def _clean_phone(v: str) -> str:
-    cleaned = re.sub(r'[\s\-\(\)]', '', v)
-    if cleaned.startswith('07'):
-        cleaned = '+250' + cleaned[1:]
-    if not re.match(r'^\+2507[2389]\d{7}$', cleaned):
+    cleaned = re.sub(r"[\s\-\(\)]", "", v)
+    if cleaned.startswith("07"):
+        cleaned = "+250" + cleaned[1:]
+    if not re.match(r"^\+2507[2389]\d{7}$", cleaned):
         raise ValueError("Nimero Igomba kuba 07X XXX XXX cg +250 7XX XXX XXX")
     return cleaned
 
@@ -24,6 +24,7 @@ class RegisterSchema(Schema):
 
     @field_validator("phone_number")
     def validate_phone(cls, v: str) -> str:
+        """Normalise a Rwandan number to E.164, rejecting anything else."""
         return _clean_phone(v)
 
 

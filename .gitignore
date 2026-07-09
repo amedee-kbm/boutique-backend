@@ -19,3 +19,7 @@ db.sqlite3
 .coverage.*
 htmlcov/
 .audit-reqs.txt
+.pip-audit-cache/
+
+# MSYS make once created this by failing to expand ~ (see Makefile).
+~/

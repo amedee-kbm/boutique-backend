@@ -11,6 +11,11 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
 ## [Unreleased]
 
 ### Added
+- Quality gate: `make check` runs ruff format, ruff lint, `mypy --strict`, a migration check, a
+  file-length ceiling, and a Celery task-name check. `make test` runs the suite with branch
+  coverage against a real Postgres. Supply chain: `bandit`, `licensecheck`, `pip-audit`.
+- First test suite: 21 tests covering registration, login, token refresh, session identity, the
+  seller gate, and password reset. 92% branch coverage, pinned as the floor.
 - Custom `User` model with email login, `is_seller` flag, and UUID primary key.
 - JWT authentication (`django-ninja-jwt`): `/auth/pair`, `/auth/refresh`, `/auth/blacklist`, plus
   `/auth/register` and a password-reset request/confirm pair that never reveals whether an email has
@@ -29,6 +34,17 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
   `src/`, leaving repository furniture (Makefile, Docker files, `.claude/`, `.github/`, `pyproject.toml`)
   at the root. The Django settings package was renamed `config` → `boutique`; `config` is a generic
   top-level name that shadows a real PyPI distribution. Celery is now `celery -A boutique`.
+- Celery's password-reset task now pins `name="users.send_password_reset_email"`. It previously
+  registered under its module path, so moving the module would have stranded queued messages.
+
+### Fixed
+- **CORS was refusing every cross-origin request.** `CorsMiddleware` was installed but no
+  `CORS_ALLOWED_ORIGINS` was ever set, so the allow-list was empty.
+- **Neon's pooled endpoint is PgBouncer in transaction mode**, which orphans server-side cursors at
+  COMMIT and does not permit persistent connections. Set `DISABLE_SERVER_SIDE_CURSORS = True` and
+  `CONN_MAX_AGE = 0`. This class of failure cannot reproduce against a local Postgres.
+- `apps.products` was in neither `INSTALLED_APPS` nor the API router — a dangling module. Registered.
+- The database URL's port was ignored; connections always went to 5432.
 
 ### Removed
 - Engineering scaffolding inherited from [the upstream project](https://github.com/upstream) that described a

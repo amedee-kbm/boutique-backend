@@ -1,0 +1,58 @@
+# Local development and test services. Three, because three is what this project
+# uses. Production Postgres is Neon; production Redis is Render's Key Value.
+#
+# Deliberately absent: ClamAV (no untrusted uploads), MinIO (images go to R2),
+# Meilisearch (no search service), PostGIS (no geography), and the Grafana /
+# Loki / Tempo / Pyroscope stack (no cluster to observe).
+
+name: boutique
+
+services:
+  postgres:
+    # Plain Postgres, matching Neon's major version. Not PostGIS.
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: boutique
+      POSTGRES_PASSWORD: boutique
+      POSTGRES_DB: boutique
+    ports:
+      # Published on 55432, not 5432. A native postgres.exe service may already
+      # hold the default port; Docker still binds and reports healthy, but
+      # `localhost:5432` reaches the *other* server, which then rejects our
+      # credentials with a baffling "password authentication failed".
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # `make test` runs `docker compose up -d --wait`, which blocks on this.
+      # Without it, pytest races the database on a cold start.
+      test: ["CMD-SHELL", "pg_isready -U boutique -d boutique"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  mailpit:
+    # Catches the password-reset mail so the flow can be driven end to end
+    # without sending anything. Web UI on http://localhost:8025.
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  postgres_data:

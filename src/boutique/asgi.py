@@ -1,5 +1,4 @@
-"""
-ASGI config for the Zita Boutique backend.
+"""ASGI config for the Zita Boutique backend.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 

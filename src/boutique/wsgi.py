@@ -1,5 +1,4 @@
-"""
-WSGI config for the Zita Boutique backend.
+"""WSGI config for the Zita Boutique backend.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
 

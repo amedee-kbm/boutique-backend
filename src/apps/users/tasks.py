@@ -1,21 +1,36 @@
+import typing as t
+
 from celery import shared_task
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-User = get_user_model()
+from apps.users.models import User
 
 
 @shared_task(
+    # The name is the contract, not the module path. Without it Celery derives
+    # `apps.users.tasks.send_password_reset_email`, which changes the moment the
+    # module moves — orphaning queued messages and any beat row that names it.
+    # Safe to choose freely today: nothing is deployed and no broker holds work.
+    name="users.send_password_reset_email",
     bind=True,
     ignore_result=True,
     max_retries=3,
     default_retry_delay=60,
 )
-def send_password_reset_email(self, user_pk: str) -> None:
+def send_password_reset_email(self: t.Any, user_pk: str) -> None:
+    """Mail a password-reset link to the user, retrying on SMTP failure.
+
+    A missing user is not an error: the account may have been deleted between
+    the request and the worker picking the job up.
+
+    Args:
+        self: the bound task, for `retry`.
+        user_pk: primary key of the user to mail.
+    """
     try:
         user = User.objects.get(pk=user_pk)
     except User.DoesNotExist:
