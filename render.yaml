@@ -24,6 +24,14 @@
 # doing while the database holds only `users` and the JWT blacklist tables. Once
 # orders are in it, that is a real migration.
 
+# ─── changing a `value:` here costs two deploys ───────────────────────────────
+# A push triggers a deploy, and Render's blueprint sync applies changed `value:`
+# entries — which restarts the service. Both fire on the same push. The restart
+# lands on the container the deploy is waiting to see go healthy, so the deploy
+# waits for an instance that no longer exists and eventually reports `Timed Out`,
+# having served 200s the whole time. Redeploy once the env has settled; nothing
+# is wrong with the image.
+
 previewsEnabled: false
 
 services:

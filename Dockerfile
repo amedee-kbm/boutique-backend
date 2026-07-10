@@ -51,8 +51,14 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
 # A compromised dependency should not own the filesystem it runs on.
+#
+# --create-home, despite this user never being logged into: gunicorn's control
+# server opens a socket under $HOME, and without the directory every boot logs
+# `Control server error: [Errno 13] Permission denied: '/home/boutique'`. It is
+# not fatal, but a recurring ERROR that everyone learns to ignore is worse than
+# no log line at all.
 RUN groupadd --system --gid 1001 boutique \
-    && useradd --system --uid 1001 --gid boutique --no-create-home boutique
+    && useradd --system --uid 1001 --gid boutique --create-home boutique
 
 WORKDIR /app
 
