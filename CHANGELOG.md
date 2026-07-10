@@ -32,6 +32,11 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
 - MIT `LICENSE`.
 
 ### Changed
+- The password-reset email is now sent **synchronously, in the request**. There is no Celery worker,
+  no beat scheduler and no Redis: one background job did not justify ~$17/month of infrastructure.
+  The task, its pinned name and the `task-names` gate all remain, and `render.yaml` keeps the queue
+  as a commented block. See ADR-0012, which records the reversal condition and the two regressions
+  this accepts.
 - **Breaking (pre-release)**: login credential is `email`, not `phone_number`. Supersedes the
   phone-login decision recorded in the original build plan. `phone_number` remains a required,
   unique field on the user.

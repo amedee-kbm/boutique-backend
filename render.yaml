@@ -2,36 +2,56 @@
 # deploys, not in a separate infra repository, because for one developer that
 # indirection is overhead.
 #
-# Frankfurt, not somewhere closer to Kigali: Neon has no African region, so the
-# database round trip dominates any edge-proximity argument. The application
-# belongs next to its database.
+# ONE service. The queue is dormant (ADR-0012): there is exactly one background
+# job — a password-reset email — and it is sent synchronously in the request.
+# Redis, a worker and a beat scheduler would cost ~$17/month to deliver an
+# occasional email a second sooner. The Celery task, its pinned name and the
+# `make task-names` gate all remain, so restoring the queue is a `.delay()` and
+# the commented block at the bottom of this file.
 #
-# Nothing here needs a persistent disk. Postgres is Neon's, images will be R2's.
-# That statelessness is what makes a managed platform correct rather than a VPS.
+# ─── region ───────────────────────────────────────────────────────────────────
+# `virginia`, not Frankfurt. The Neon database lives at
+# `ep-…-pooler.c-2.us-east-1.aws.neon.tech` — us-east-1, which is N. Virginia.
+#
+# ADR-0008 says to colocate with the database, because the database round trip
+# dominates any edge-proximity argument. That reasoning was right; an earlier
+# version of this file put the services in Frankfurt and asserted, in a comment,
+# that this was "beside Neon". It was not. Every query would have crossed the
+# Atlantic.
+#
+# The better end state is to recreate the Neon project in eu-central-1 and move
+# back to Frankfurt — colocated *and* ~150ms from Kigali instead of ~230ms. Worth
+# doing while the database holds only `users` and the JWT blacklist tables. Once
+# orders are in it, that is a real migration.
 
 previewsEnabled: false
 
 services:
-  # ─── web ───────────────────────────────────────────────────────────────────
   - type: web
     name: boutique-backend
     runtime: docker
-    plan: starter
-    region: frankfurt
+    plan: free
+    region: virginia
     branch: main
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/v1/docs/
 
-    # Migrations run once, here, before any new instance takes traffic. Running
-    # them in the container's entrypoint would race every other instance that
-    # boots at the same time, and the loser applies a migration twice or reads a
-    # half-migrated schema.
-    # The image sets WORKDIR /app/src, so this is relative to the source root.
-    preDeployCommand: python manage.py migrate --noinput
+    # Migrations run at container start rather than as a pre-deploy command,
+    # because `preDeployCommand` requires a paid instance type.
+    #
+    # A container that migrates on boot races every other container booting at
+    # the same time. That is safe here for exactly one reason: the free plan runs
+    # a single instance. On moving to a paid plan this must become
+    # `preDeployCommand` *before* scaling past one instance, not after.
+    dockerCommand: >-
+      sh -c "python manage.py migrate --noinput &&
+      gunicorn boutique.wsgi:application
+      --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60
+      --access-logfile - --error-logfile -"
 
     envVars:
       - key: DJANGO_SECRET_KEY
-        generateValue: true # Render generates once and keeps it; never in git.
+        generateValue: true # Render generates it once and keeps it; never in git.
       - key: DJANGO_DEBUG
         value: "False"
       - key: DJANGO_APPEND_SLASH
@@ -46,8 +66,6 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false # Neon's POOLED endpoint — the host with `-pooler` in it
-      - key: CELERY_BROKER_URL
-        fromService: { type: keyvalue, name: boutique-redis, property: connectionString }
       - key: EMAIL_BACKEND
         value: django.core.mail.backends.smtp.EmailBackend
       - key: EMAIL_HOST
@@ -62,74 +80,72 @@ services:
         value: "True"
       - key: DEFAULT_FROM_EMAIL
         sync: false
-
-  # ─── celery worker ─────────────────────────────────────────────────────────
-  # Runs the password-reset mail, so a slow SMTP server never delays a response.
-  - type: worker
-    name: boutique-celery
-    runtime: docker
-    plan: starter
-    region: frankfurt
-    branch: main
-    dockerfilePath: ./Dockerfile
-    dockerCommand: celery -A boutique worker --loglevel=info --concurrency=2
-    envVars: &worker_env
-      - key: DJANGO_SECRET_KEY
-        fromService: { type: web, name: boutique-backend, envVarKey: DJANGO_SECRET_KEY }
-      - key: DJANGO_DEBUG
-        value: "False"
-      - key: DJANGO_APPEND_SLASH
-        value: "True"
-      - key: DJANGO_ALLOWED_HOSTS
-        value: ""
-      - key: DJANGO_CSRF_TRUSTED_ORIGINS
-        value: ""
-      - key: FRONTEND_URL
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: CELERY_BROKER_URL
-        fromService: { type: keyvalue, name: boutique-redis, property: connectionString }
-      - key: EMAIL_BACKEND
-        value: django.core.mail.backends.smtp.EmailBackend
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_PORT
-        value: "587"
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
-      - key: EMAIL_USE_TLS
-        value: "True"
-      - key: DEFAULT_FROM_EMAIL
-        sync: false
-
-  # ─── celery beat ───────────────────────────────────────────────────────────
-  # No periodic tasks exist yet. Beat runs anyway, so that the first scheduled
-  # task is a code change rather than an infrastructure change — and so that this
-  # service is exercised long before anything depends on it.
-  - type: worker
-    name: boutique-celery-beat
-    runtime: docker
-    plan: starter
-    region: frankfurt
-    branch: main
-    dockerfilePath: ./Dockerfile
-    dockerCommand: celery -A boutique beat --loglevel=info
-    envVars: *worker_env
-
-  # ─── redis ─────────────────────────────────────────────────────────────────
-  # Celery's broker, and nothing else. This application does not cache.
-  # `noeviction` because a broker that silently drops messages under memory
-  # pressure is a broker that loses a customer's password-reset email.
-  - type: keyvalue
-    name: boutique-redis
-    plan: starter
-    region: frankfurt
-    maxmemoryPolicy: noeviction
-    ipAllowList: [] # reachable only from inside Render's network
+      # No CELERY_BROKER_URL. `send_password_reset` calls `.apply()`, which runs
+      # the task in this process and never opens a broker connection.
+# ─── the queue, dormant ───────────────────────────────────────────────────────
+#
+# Restore this when ADR-0012's reversal condition is met: a second asynchronous
+# task, or the first one whose loss actually matters. A password-reset email lost
+# to a restart means the customer clicks the link again. An order confirmation
+# lost to a restart is a different conversation.
+#
+# To restore: uncomment, add CELERY_BROKER_URL to the web service, and change
+# `send_password_reset` back to `.delay()`. The task name is already pinned, so
+# nothing in the broker or in a beat row breaks.
+#
+# Beat is folded into the worker with `-B`. Safe only while there is exactly one
+# worker: two workers, each running an embedded scheduler, fire every periodic
+# task twice. Split it out before scaling the worker to 2.
+#
+#  - type: worker
+#    name: boutique-celery
+#    runtime: docker
+#    plan: starter
+#    region: virginia
+#    branch: main
+#    dockerfilePath: ./Dockerfile
+#    dockerCommand: celery -A boutique worker -B --loglevel=info --concurrency=2
+#    envVars:
+#      - key: DJANGO_SECRET_KEY
+#        fromService: { type: web, name: boutique-backend, envVarKey: DJANGO_SECRET_KEY }
+#      - key: DJANGO_DEBUG
+#        value: "False"
+#      - key: DJANGO_APPEND_SLASH
+#        value: "True"
+#      - key: DJANGO_ALLOWED_HOSTS
+#        value: ""
+#      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+#        value: ""
+#      - key: FRONTEND_URL
+#        sync: false
+#      - key: DATABASE_URL
+#        sync: false
+#      - key: CELERY_BROKER_URL
+#        fromService: { type: keyvalue, name: boutique-redis, property: connectionString }
+#      - key: EMAIL_BACKEND
+#        value: django.core.mail.backends.smtp.EmailBackend
+#      - key: EMAIL_HOST
+#        sync: false
+#      - key: EMAIL_PORT
+#        value: "587"
+#      - key: EMAIL_HOST_USER
+#        sync: false
+#      - key: EMAIL_HOST_PASSWORD
+#        sync: false
+#      - key: EMAIL_USE_TLS
+#        value: "True"
+#      - key: DEFAULT_FROM_EMAIL
+#        sync: false
+#
+#  # `noeviction`: a broker that silently drops messages under memory pressure is
+#  # a broker that loses a customer's password-reset email.
+#  - type: keyvalue
+#    name: boutique-redis
+#    plan: starter
+#    region: virginia
+#    maxmemoryPolicy: noeviction
+#    ipAllowList: []
 
 # Postgres is Neon's, not Render's. DATABASE_URL points at Neon's *pooled*
-# endpoint — the host with `-pooler` in it — and settings pin CONN_MAX_AGE = 0
-# and DISABLE_SERVER_SIDE_CURSORS = True for it. See docs/engineering-notes.md.
+# endpoint, and settings pin CONN_MAX_AGE = 0 and DISABLE_SERVER_SIDE_CURSORS =
+# True for it. See docs/engineering-notes.md.

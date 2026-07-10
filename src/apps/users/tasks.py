@@ -53,4 +53,12 @@ def send_password_reset_email(self: t.Any, user_pk: str) -> None:
             fail_silently=False,
         )
     except Exception as exc:
+        # Run locally — which is how it runs today, via `.apply()` (ADR-0012) —
+        # there is nothing to retry onto. Raise, so the EagerResult records a
+        # FAILURE the caller can log. `self.retry()` here would raise `Retry`,
+        # which is not a failure, and the error would vanish silently.
+        #
+        # Run on a worker, retry with backoff. That is the reversal path.
+        if self.request.is_eager:
+            raise
         raise self.retry(exc=exc)

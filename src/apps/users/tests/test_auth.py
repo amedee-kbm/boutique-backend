@@ -233,3 +233,27 @@ def test_reset_confirm_rejects_a_tampered_token(client: Client, post_json: PostJ
     assert response.status_code == 400
     customer.refresh_from_db()
     assert customer.check_password(STRONG_PASSWORD)
+
+
+def test_reset_request_stays_200_when_the_mail_server_fails(
+    client: Client, post_json: PostJson, customer: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An SMTP failure must not become a 500.
+
+    A 500 for a known address and a 200 for an unknown one is account
+    enumeration by status code — the very thing the generic response exists to
+    prevent. The send runs in the request (ADR-0012), so the failure has to be
+    swallowed and logged rather than raised.
+    """
+
+    def explode(*args: t.Any, **kwargs: t.Any) -> None:
+        raise OSError("smtp is down")
+
+    monkeypatch.setattr("apps.users.tasks.send_mail", explode)
+
+    known = post_json(client, "/auth/password/reset-request", {"email": customer.email})
+    unknown = post_json(client, "/auth/password/reset-request", {"email": "nobody@example.com"})
+
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+    assert len(mail.outbox) == 0

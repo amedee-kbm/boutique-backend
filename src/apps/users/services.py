@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
@@ -10,6 +12,8 @@ from ninja_jwt.tokens import RefreshToken
 
 from apps.users.models import User
 from apps.users.tasks import send_password_reset_email
+
+logger = logging.getLogger(__name__)
 
 DUPLICATE_IDENTITY = "Email or phone number already registered"
 
@@ -57,15 +61,30 @@ def tokens_for_user(user: User) -> dict[str, str]:
 
 
 def send_password_reset(email: str) -> None:
-    """Enqueue a reset mail, but only for an address that exists.
+    """Send a reset mail, but only to an address that exists.
 
     The endpoint answers identically either way, so returning early here is what
-    keeps the API from confirming which addresses have accounts.
+    keeps the API from confirming which addresses have accounts. It does not hide
+    the *timing*: see the note below.
+
+    Sent synchronously, in the request. There is no broker and no worker
+    (ADR-0012). `.apply()` executes the task in this process regardless of
+    CELERY_TASK_ALWAYS_EAGER, so nothing here depends on a Celery setting;
+    `throw=False` keeps an SMTP failure from becoming a 500, which would tell the
+    caller that the address exists.
+
+    The task stays a task — pinned name, `make task-names` gate, tests — so
+    restoring the queue is `.delay()` plus a worker service.
     """
     user = User.objects.filter(email__iexact=email).first()
     if not user:
         return
-    send_password_reset_email.delay(str(user.pk))
+
+    result = send_password_reset_email.apply(args=(str(user.pk),), throw=False)
+    if result.failed():
+        # The caller must not learn that this address exists, so we swallow it
+        # here and shout in the logs instead.
+        logger.error("password-reset mail failed for user %s: %r", user.pk, result.result)
 
 
 def confirm_password_reset(*, uid: str, token: str, password: str) -> User:

@@ -27,6 +27,7 @@ disagree with itself.
 | [0009](0009-a-gate-must-be-seen-to-fail.md) | A gate is not trusted until observed failing | Accepted |
 | [0010](0010-no-third-party-code-verbatim.md) | No third-party code is carried verbatim | Accepted |
 | [0011](0011-src-layout-and-boutique-package.md) | `src/` layout, settings package named `boutique` | Accepted |
+| [0012](0012-the-queue-is-dormant.md) | The queue is dormant; the reset email is sent in the request | Accepted |
 
 ## Template
 

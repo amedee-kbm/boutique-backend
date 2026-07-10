@@ -93,5 +93,18 @@ There is no rate limiting on the API. There is no audit log of admin actions. Th
 scanning, no penetration test, and no bug-bounty programme. The password-reset token has
 Django's default lifetime and no additional throttling.
 
+**`/auth/password/reset-request` leaks account existence through timing.** The status code and body
+are identical for a known and an unknown address, and a test asserts it. But the email is now sent
+synchronously in the request (ADR-0012), so a known address waits for SMTP and an unknown one returns
+immediately. Measured against the running container with the console email backend: 18 ms versus
+170 ms. Real SMTP widens it to about a second. The clock says what the response does not.
+
+**That endpoint also holds a server thread for an SMTP round trip**, and it is unauthenticated and
+unrate-limited. Two workers of four threads means eight concurrent requests occupy the server. Rate
+limiting was already on this list; this moved it up.
+
+Both are consequences of a deliberate trade — see ADR-0012 — and both are fixed by restoring the
+queue, which is a ten-line change whose reversal condition is written down.
+
 None of these is acceptable indefinitely. All of them are acceptable for an application that has
 not launched, and they are written here so that "we forgot" never becomes the explanation.

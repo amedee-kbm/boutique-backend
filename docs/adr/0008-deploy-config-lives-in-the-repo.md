@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted. Its topology is amended by [ADR-0012](0012-the-queue-is-dormant.md): the worker,
+the beat scheduler and Redis are dormant, and one free web service runs the application.
+Its *reasoning* — colocate with the database, keep deploy config in the repository — stands.
 
 ## Context
 
@@ -23,8 +25,11 @@ copy of that third repository's directory, describing a cluster Zita does not ha
 **`render.yaml` lives in the backend repository, beside the code it deploys.** There is no
 `zita-infra`.
 
-The backend deploys to Render: a web service, two background workers (a Celery worker and a
-Celery beat scheduler), and a managed Redis, all in Frankfurt beside the Neon database.
+The backend deploys to Render, colocated with the Neon database.
+
+*(Amended by ADR-0012: one web service today, not four. And the database is in `us-east-1`, not
+Frankfurt — an earlier version of `render.yaml` asserted colocation it did not have. Colocation was
+always the rule; the premise went unchecked.)*
 
 Postgres is Neon's and images will be R2's, so nothing needs a persistent disk. That
 statelessness is what makes a managed platform correct here rather than a VPS.
