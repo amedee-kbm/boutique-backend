@@ -1,0 +1,31 @@
+# Everything the image does not need. A smaller context is a faster build and a
+# smaller attack surface — and .env must never reach an image layer.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.claude
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.pip-audit-cache
+htmlcov
+.coverage
+.audit-reqs.txt
+
+docs
+scripts
+compose.yaml
+Makefile
+*.md
+.gitleaks.toml
+.python-version
+
+# Tests are not part of the runtime. They are part of CI, which does not build
+# this image.
+src/conftest.py
+src/apps/*/tests
+**/__pycache__

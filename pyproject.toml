@@ -13,8 +13,10 @@ dependencies = [
     "django-ninja-extra>=0.30.0",
     "django-ninja-jwt>=5.4.4",
     "django-storages[s3]>=1.14.6",
+    "gunicorn>=23.0.0",
     "psycopg[binary]>=3.3.4",
     "pydantic[email]>=2.13.4",
+    "whitenoise>=6.11.0",
 ]
 
 # Quality tooling only. Nothing here ships to production; nothing here is

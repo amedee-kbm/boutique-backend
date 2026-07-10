@@ -11,6 +11,11 @@ prefixed **Breaking**. Section order: Added, Changed, Fixed, Deprecated, Removed
 ## [Unreleased]
 
 ### Added
+- Deployment: `Dockerfile` (multi-stage, non-root, 93 MB, nothing from apt) and `render.yaml` —
+  a web service, a Celery worker, a Celery beat scheduler and Redis, all in Frankfurt beside Neon.
+  Migrations run as a pre-deploy command, never on container boot.
+- `gunicorn` and `whitenoise`. Behind a proxy, `SECURE_PROXY_SSL_HEADER` is set and, outside DEBUG,
+  so are `SECURE_SSL_REDIRECT`, secure cookies and a conservative HSTS max-age.
 - Quality gate: `make check` runs ruff format, ruff lint, `mypy --strict`, a migration check, a
   file-length ceiling, and a Celery task-name check. `make test` runs the suite with branch
   coverage against a real Postgres. Supply chain: `bandit`, `licensecheck`, `pip-audit`.

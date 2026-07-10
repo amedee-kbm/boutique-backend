@@ -80,6 +80,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Serves the Django admin's own static files. Must sit directly after
+    # SecurityMiddleware and before everything else.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -177,6 +180,32 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# WhiteNoise compresses and fingerprints on collectstatic, so the admin's assets
+# are served with far-future cache headers and no separate web server. This app
+# serves no user-facing static files: product images go to R2, and the storefront
+# is a separate Next.js deployment.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+# Behind Render's proxy, every request arrives over plain HTTP with the original
+# scheme in this header. Without it Django believes the connection is insecure,
+# builds `http://` absolute URLs, and refuses to set secure cookies.
+#
+# This is only safe because the proxy always overwrites the header. Trusting it
+# from a directly reachable origin would let any client claim HTTPS.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # 1 hour to start. Raise it deliberately, after confirming every subdomain
+    # serves HTTPS — HSTS is not reversible within its own max-age.
+    SECURE_HSTS_SECONDS = 3600
 
 AUTH_USER_MODEL = "users.User"
 
