@@ -72,6 +72,25 @@ this exact bug in `apps/users/tasks.py` on its first run.
 
 ---
 
+## `make check` needs a loadable Django settings module
+
+`mypy` runs with the django-stubs plugin, and that plugin **imports** the settings module to build
+its type map. Settings read `DJANGO_SECRET_KEY`, `DATABASE_URL` and the rest from the environment
+and raise without them. So with no environment, mypy does not report type errors — it dies before
+it starts:
+
+```
+error: INTERNAL ERROR
+Error constructing plugin instance of NewSemanalDjangoPlugin
+```
+
+Locally this never surfaced, because a gitignored `.env` is always present. `make check` has always
+depended on the environment, and nothing said so. CI passes the variables explicitly; they are
+throwaway values and no connection is ever made.
+
+The general shape is worth keeping: **a green check on your machine may be green because of a file
+that is not in the repository.** The first CI run is the first honest one.
+
 ## `on_commit` never fires under pytest
 
 `pytest-django` wraps each test in a transaction and rolls it back. `transaction.on_commit`

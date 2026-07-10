@@ -21,6 +21,25 @@ jobs:
   check:
     name: make check
     runs-on: ubuntu-latest
+
+    # `make check` runs mypy, and the django-stubs plugin *imports* the settings
+    # module to build its type map. Settings read DJANGO_SECRET_KEY and friends
+    # from the environment and raise without them, so mypy dies before it type
+    # checks anything: "Error constructing plugin instance of
+    # NewSemanalDjangoPlugin".
+    #
+    # Locally this never showed up, because a gitignored .env is always present.
+    # `make check` has always depended on the environment; nothing said so.
+    env:
+      DJANGO_SECRET_KEY: ci-only-not-a-secret
+      DJANGO_DEBUG: "True"
+      DJANGO_APPEND_SLASH: "True"
+      DJANGO_ALLOWED_HOSTS: ""
+      DJANGO_CSRF_TRUSTED_ORIGINS: ""
+      FRONTEND_URL: http://localhost:3000
+      # Parsed at import; never connected to by `make check`.
+      DATABASE_URL: postgresql://boutique:boutique@localhost:55432/boutique
+
     steps:
       - uses: actions/checkout@v5
 

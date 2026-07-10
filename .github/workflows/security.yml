@@ -1,9 +1,14 @@
-# Secret scanning. This repository's history is clean — every path across every
-# commit was checked, and the two commits whose messages claim to untrack a .env
-# only ever touched settings.py and .gitignore. This keeps it clean.
+# Secret scanning over the full history, not just the working tree: a secret
+# committed and removed in the next commit is still in the pack.
 #
-# `fetch-depth: 0` because gitleaks scans history, not just the working tree. A
-# secret committed and then removed in the next commit is still in the pack.
+# This repository's history is clean. This keeps it that way.
+#
+# The official gitleaks action is not used. It wraps the binary in artifact
+# upload, SARIF generation and licence checks, and on this repository's first
+# push it reported "no leaks found" and then exited 1 — a failure with no
+# finding attached to it. A security gate whose red means nothing in particular
+# is worse than no gate. The binary is invoked directly, pinned by version and
+# verified by checksum, so a compromised release cannot substitute itself.
 
 name: Security
 
@@ -19,16 +24,30 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
 jobs:
   secrets:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
+      # Full history: gitleaks scans commits, not the checkout.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSLo "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan every commit
+        run: gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1
