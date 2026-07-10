@@ -43,11 +43,12 @@ services:
     # the same time. That is safe here for exactly one reason: the free plan runs
     # a single instance. On moving to a paid plan this must become
     # `preDeployCommand` *before* scaling past one instance, not after.
-    dockerCommand: >-
-      sh -c "python manage.py migrate --noinput &&
-      gunicorn boutique.wsgi:application
-      --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60
-      --access-logfile - --error-logfile -"
+    # No `sh -c` wrapper: Render already runs dockerCommand through a shell, so
+    # wrapping it makes the whole string the name of a command that does not
+    # exist — `sh: 1: python manage.py migrate ... : not found`, exit 127. A
+    # local `docker run` needs the wrapper, which is why it passed here and
+    # failed there.
+    dockerCommand: python manage.py migrate --noinput && gunicorn boutique.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 --access-logfile - --error-logfile -
 
     envVars:
       - key: DJANGO_SECRET_KEY
@@ -56,8 +57,11 @@ services:
         value: "False"
       - key: DJANGO_APPEND_SLASH
         value: "True"
+      # `property: host` resolves to the *subdomain* (`boutique-backend-4pw6`),
+      # not the hostname, so Django would reject every request with
+      # DisallowedHost. Set the full hostname explicitly.
       - key: DJANGO_ALLOWED_HOSTS
-        fromService: { type: web, name: boutique-backend, property: host }
+        sync: false
       - key: DJANGO_CSRF_TRUSTED_ORIGINS
         sync: false # https://<host>, set once in the dashboard
       - key: FRONTEND_URL
