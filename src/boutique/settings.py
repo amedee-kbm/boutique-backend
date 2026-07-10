@@ -222,10 +222,9 @@ NINJA_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
-# Email (password recovery). Defaults to the console backend for local dev — set
-# EMAIL_BACKEND to the SMTP backend and fill the GoDaddy creds in .env for real
-# sending. GoDaddy Workspace: smtpout.secureserver.net:465 (SSL); GoDaddy M365:
-# smtp.office365.com:587 (TLS).
+# Email (password recovery). Defaults to the console backend for local dev; set
+# EMAIL_BACKEND to the SMTP backend and fill the credentials in .env to send for
+# real. Mailpit (compose.yaml) receives on localhost:1025 with no auth.
 EMAIL_BACKEND = env.str("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = env.str("EMAIL_HOST", default="")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
@@ -234,6 +233,10 @@ EMAIL_HOST_PASSWORD = env.str("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="Zita Boutique <no-reply@amedeyo.com>")
+
+# Unset, smtplib blocks ~130s on a dropped SYN. Mail is sent in the request
+# (ADR-0012) and gunicorn's --timeout does not bound one. engineering-notes.md.
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 
 
 # Celery — offloads the SMTP send so /auth/password/reset-request returns

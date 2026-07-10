@@ -76,6 +76,37 @@ trip.** With two workers and four threads, eight concurrent requests occupy the 
 is unauthenticated and unrate-limited. Rate limiting was already on the list of things not done; it
 moved up it.
 
+**That duration must be bounded explicitly, and `--timeout` does not bound it.** The first live
+password reset took ~130 seconds and returned 200. Two things were wrong, and only the second was
+obvious:
+
+- `EMAIL_TIMEOUT` was unset, so Django passed `None` to `smtplib` and the socket blocked until the
+  kernel gave up on the TCP handshake. It is now `10`.
+- `gunicorn --timeout 60` did not intervene, and never would have. We run `--threads 4`, which is the
+  `gthread` worker, and gunicorn's own documentation says that for non-sync workers the timeout "just
+  means that the worker process is still communicating and is not tied to the length of time required
+  to handle a single request." A blocked request thread keeps the worker's heartbeat alive. **The
+  request timeout in `entrypoint.sh` has never limited a request**; it limits worker silence.
+
+The amplification consequence above was therefore understated: eight requests could hold the entire
+service for two minutes each. `EMAIL_TIMEOUT` cuts that to ten seconds. Rate limiting is still owed.
+
+**Render's free plan blocks outbound SMTP.** Ports 25, 465 and 587 are refused to free web services
+(Render changelog, 2025-09-26); port 25 is blocked on every plan, because Render runs on EC2. A
+blocked port does not refuse the connection — it drops the SYN, so this arrives as a hang rather than
+an error, which is why it read as a Django problem before it read as a network one. Resend also
+listens on `2465` (implicit TLS) and `2587` (STARTTLS); we use `2587`. This is the second constraint
+the free plan has imposed on the design, after `preDeployCommand`, and it is the one most likely to be
+forgotten — it is invisible until the first real email.
+
+**The failure was contained exactly as designed, which is the part worth keeping.** SMTP timed out;
+`throw=False` turned it into a logged `FAILURE`; the endpoint returned 200 with the same body it
+returns for an unknown address. Had the SMTP error escaped as a 500, a known address would have
+answered 500 and an unknown one 200 — account enumeration by status code, on an unauthenticated
+endpoint, in production. A test asserted this and was proven red before it was trusted
+([ADR-0009](0009-a-gate-must-be-seen-to-fail.md)). It has now also been observed against a real
+failure that nobody staged.
+
 **A reset email in flight is lost if the process restarts.** The customer clicks the link again.
 
 **Free-tier consequences.** `preDeployCommand` requires a paid instance, so migrations run at

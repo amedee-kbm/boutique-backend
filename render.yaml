@@ -66,14 +66,27 @@ services:
         value: django.core.mail.backends.smtp.EmailBackend
       - key: EMAIL_HOST
         sync: false
+      # 2587, not 587. Render blocks outbound traffic to ports 25, 465 and 587
+      # from free web services (changelog, 2025-09-26); port 25 stays blocked on
+      # every plan, because Render runs on EC2. A blocked port does not refuse
+      # the connection, it swallows the SYN — so this presents as a ~130s hang,
+      # not an error. Resend also listens on 2465 (implicit TLS) and 2587
+      # (STARTTLS) for exactly this case.
+      #
+      # On a paid plan, 587 works and this can go back.
       - key: EMAIL_PORT
-        value: "587"
+        value: "2587"
       - key: EMAIL_HOST_USER
         sync: false
       - key: EMAIL_HOST_PASSWORD
         sync: false
       - key: EMAIL_USE_TLS
-        value: "True"
+        value: "True" # 2587 is STARTTLS, same as 587. (2465 would be USE_SSL.)
+      # Fail in ten seconds rather than in two minutes. See settings.py: gunicorn's
+      # --timeout does not bound a request under the gthread worker, so this is the
+      # only limit on how long an unauthenticated caller can hold a thread.
+      - key: EMAIL_TIMEOUT
+        value: "10"
       - key: DEFAULT_FROM_EMAIL
         sync: false
       # No CELERY_BROKER_URL. `send_password_reset` calls `.apply()`, which runs

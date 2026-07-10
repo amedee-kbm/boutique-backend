@@ -162,6 +162,27 @@ Buffering breaks streaming SSR."* Different framework, identical constraint.
 
 ---
 
+## `gunicorn --timeout` does not limit a request
+
+It limits how long a **worker** may go silent. Gunicorn's documentation is explicit that for
+non-sync workers it "just means that the worker process is still communicating and is not tied to the
+length of time required to handle a single request."
+
+We pass `--threads 4`, which selects the `gthread` worker. Its main loop keeps notifying the arbiter
+while request threads block, so a request can run forever under a `--timeout 60` that looks like a
+limit and is not. Only sync workers — no `--threads` — get the behaviour the name suggests.
+
+**Every blocking client in a request path must carry its own timeout.** `EMAIL_TIMEOUT` for SMTP,
+the `timeout` argument for `requests`/`httpx`, `statement_timeout` for Postgres. Defaults are
+usually `None`, which means "until the kernel gives up" — around 130 seconds for a TCP handshake
+that is being silently dropped.
+
+Found the expensive way: a live password reset hung for 130 seconds because Render's free plan drops
+outbound SYNs to port 587 (see [ADR-0012](adr/0012-the-queue-is-dormant.md)). A dropped SYN is not a
+refused connection; there is no error to catch, only a wait.
+
+---
+
 ## Windows: `make` hands recipes a stripped environment
 
 MSYS `make` (Git Bash) removes the Windows environment variables before invoking a recipe. Three
