@@ -52,13 +52,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 # A compromised dependency should not own the filesystem it runs on.
 #
-# --create-home, despite this user never being logged into: gunicorn's control
-# server opens a socket under $HOME, and without the directory every boot logs
-# `Control server error: [Errno 13] Permission denied: '/home/boutique'`. It is
-# not fatal, but a recurring ERROR that everyone learns to ignore is worse than
-# no log line at all.
-RUN groupadd --system --gid 1001 boutique \
-    && useradd --system --uid 1001 --gid boutique --create-home boutique
+# Not `--system`: that flag means "a UID below SYS_UID_MAX (999)", and we pin
+# 1001, so useradd honours the number and warns about the contradiction. The IDs
+# are pinned deliberately — they must match the `--chown` in the COPY layers and
+# stay stable across rebuilds — and this is the application's user, not a system
+# daemon account. So state the UID and drop the flag that disagrees with it.
+#
+# --create-home, though nobody logs in: gunicorn's control server opens a socket
+# under $HOME, and without the directory every boot logs `Control server error:
+# [Errno 13] Permission denied`. Not fatal — but a recurring ERROR that everyone
+# learns to ignore is worse than no log line at all.
+RUN groupadd --gid 1001 boutique \
+    && useradd --uid 1001 --gid boutique --create-home --shell /usr/sbin/nologin boutique
 
 WORKDIR /app
 
