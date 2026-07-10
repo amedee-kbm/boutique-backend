@@ -58,15 +58,15 @@ WORKDIR /app
 
 COPY --from=builder --chown=boutique:boutique /app/.venv /app/.venv
 COPY --from=builder --chown=boutique:boutique /app/src /app/src
+COPY --chmod=0755 entrypoint.sh /app/entrypoint.sh
 
 USER boutique
 WORKDIR /app/src
 
 EXPOSE 8000
 
-# No migrations here. A container that migrates on boot races every other
-# container that boots at the same time. Render runs them once, as a pre-deploy
-# command, before any new instance takes traffic. See render.yaml.
-#
-# $PORT is injected by Render. The default keeps `docker run` usable.
-CMD ["sh", "-c", "gunicorn boutique.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --threads 4 --timeout 60 --access-logfile - --error-logfile -"]
+# The start sequence lives in entrypoint.sh, not here and not in render.yaml:
+# Render splits `dockerCommand` on whitespace and execs it, so `migrate && gunicorn`
+# cannot be expressed there. Keeping it in the image means `docker run` exercises
+# exactly what Render runs.
+CMD ["/app/entrypoint.sh"]

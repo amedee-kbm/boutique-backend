@@ -36,19 +36,11 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/v1/docs/
 
-    # Migrations run at container start rather than as a pre-deploy command,
-    # because `preDeployCommand` requires a paid instance type.
-    #
-    # A container that migrates on boot races every other container booting at
-    # the same time. That is safe here for exactly one reason: the free plan runs
-    # a single instance. On moving to a paid plan this must become
-    # `preDeployCommand` *before* scaling past one instance, not after.
-    # No `sh -c` wrapper: Render already runs dockerCommand through a shell, so
-    # wrapping it makes the whole string the name of a command that does not
-    # exist — `sh: 1: python manage.py migrate ... : not found`, exit 127. A
-    # local `docker run` needs the wrapper, which is why it passed here and
-    # failed there.
-    dockerCommand: python manage.py migrate --noinput && gunicorn boutique.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 --access-logfile - --error-logfile -
+    # No dockerCommand. Render splits it on whitespace and execs it directly —
+    # there is no shell, so `migrate && gunicorn` is impossible: `&&` is passed to
+    # `migrate` as an argument. Wrapping it in `sh -c` does not help; the quotes
+    # survive the split. The start sequence lives in the image, in entrypoint.sh,
+    # where `docker run` exercises exactly what Render runs.
 
     envVars:
       - key: DJANGO_SECRET_KEY
