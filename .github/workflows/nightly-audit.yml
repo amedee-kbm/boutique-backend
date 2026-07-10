@@ -1,0 +1,94 @@
+# A vulnerability disclosed today affects code that has not changed since
+# yesterday. deps.yml only fires when the dependency graph moves, so without
+# this a CVE in a pinned package would go unnoticed until the next bump.
+#
+# On failure this opens an issue rather than leaving a red square nobody visits.
+# It reuses an existing open issue instead of filing one per night.
+
+name: Nightly audit
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC. Off the hour: the hour is congested.
+  workflow_dispatch: # so it can be run by hand after a suppression expires
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: audit main
+    runs-on: ubuntu-latest
+    outputs:
+      failed: ${{ steps.run.outcome == 'failure' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked --group dev
+
+      - id: run
+        continue-on-error: true
+        run: |
+          make audit
+          make licensecheck
+
+      - name: Fail the job if either gate failed
+        if: steps.run.outcome == 'failure'
+        run: exit 1
+
+  report:
+    name: open or update an issue
+    needs: audit
+    if: always() && needs.audit.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const title = 'Nightly audit is failing'
+            const body = [
+              'The nightly supply-chain audit failed on `main`.',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Either bump the dependency, or suppress the finding — and a suppression needs all four:',
+              'a written rationale, an exit condition, a re-review date, and the suppression itself.',
+              'See SECURITY.md. A suppression without a rationale is a hole with a comment character',
+              'in front of it.',
+            ].join('\n')
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,dependencies',
+            })
+
+            const open = existing.data.find((issue) => issue.title === title)
+            if (open) {
+              // Bump the existing issue rather than filing a new one every night.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                body: `Still failing. Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              })
+              return
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['security', 'dependencies'],
+            })

@@ -1,0 +1,99 @@
+# The Makefile is the contract. This workflow runs it, and nothing else.
+#
+# No path filter: this is a required status check, and a required check that
+# never reports leaves a pull request stuck on "Expected — Waiting for status".
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: make check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        # --locked fails if uv.lock is out of date with pyproject.toml, rather
+        # than quietly resolving something different from what anyone tested.
+        run: uv sync --locked --group dev
+
+      - name: Quality gate
+        run: make check
+
+      - name: Static application security testing
+        run: make bandit
+
+  test:
+    name: make test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Published on 55432 to match compose.yaml, so the Makefile's
+        # TEST_DATABASE_URL is identical here and on a developer's machine.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: boutique
+          POSTGRES_PASSWORD: boutique
+          POSTGRES_DB: boutique
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U boutique -d boutique"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+
+    env:
+      # Settings read these at import. Values are throwaway: the suite never
+      # reaches Neon, and CELERY_TASK_ALWAYS_EAGER means no broker is needed.
+      DJANGO_SECRET_KEY: ci-only-not-a-secret
+      DJANGO_DEBUG: "True"
+      DJANGO_APPEND_SLASH: "True"
+      DJANGO_ALLOWED_HOSTS: ""
+      DJANGO_CSRF_TRUSTED_ORIGINS: ""
+      FRONTEND_URL: http://localhost:3000
+      DATABASE_URL: postgresql://boutique:boutique@localhost:55432/boutique
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Suite, with branch coverage
+        # CI=true as a command-line variable, not an environment variable: it
+        # tells the Makefile that Postgres and Redis are already running, so it
+        # does not try to start them with docker compose. See the Makefile.
+        run: make test CI=true
+
+      - name: Coverage floor
+        # fail_under lives in pyproject.toml. It is a ratchet (ADR-0006): it is
+        # what the suite genuinely achieves, and it only ever goes up.
+        run: uv run coverage report

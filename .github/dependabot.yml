@@ -1,0 +1,37 @@
+version: 2
+
+updates:
+  # Python. Grouped so that a week of patch bumps is one pull request rather
+  # than fifteen, because fifteen pull requests get merged without reading.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # A freshly published version is the most likely to be a compromised one.
+    # Waiting a week costs nothing and defeats the whole class of attack where a
+    # maintainer account is taken over and a malicious patch release cut.
+    cooldown:
+      default-days: 7
+    groups:
+      python-patch:
+        patterns: ["*"]
+        update-types: ["patch"]
+      python-minor:
+        patterns: ["*"]
+        update-types: ["minor"]
+    ignore:
+      # Django majors are a deliberate, scheduled migration, never a Dependabot
+      # pull request. Minor and patch releases are fine.
+      - dependency-name: django
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,0 +1,35 @@
+# gitleaks configuration.
+#
+# Start from the upstream default ruleset rather than reinventing entropy
+# heuristics, then narrow it to this repository's shape.
+
+title = "Zita Boutique backend"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Paths and values that look like secrets and are not"
+
+paths = [
+  # The template. Every value in it is a placeholder, and it exists precisely so
+  # that nobody has to guess which variables the app needs.
+  '''\.env\.example$''',
+
+  # Lockfiles carry integrity hashes, which are high-entropy by design.
+  '''uv\.lock$''',
+]
+
+regexes = [
+  # The literal placeholder in .env.example.
+  '''change-me-to-something-random''',
+
+  # CI's throwaway Django secret. It is in the workflow file on purpose: the
+  # test database is a container that lives for one job, and a real secret there
+  # would be a worse idea, not a better one.
+  '''ci-only-not-a-secret''',
+
+  # compose.yaml's local Postgres credentials. The container is not reachable
+  # from outside the developer's machine, and the password is the username.
+  '''postgresql://boutique:boutique@''',
+]

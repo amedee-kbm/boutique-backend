@@ -38,17 +38,26 @@ endif
 MANAGE := uv run python src/manage.py
 
 # Tests run against the local Postgres from compose.yaml, never against Neon.
-# Exported here rather than in .env so that a stray `pytest` invocation without
-# make cannot silently create a test database on the production host.
-TEST_DATABASE_URL := postgresql://boutique:boutique@localhost:55432/boutique
+# Set here rather than in .env so that a stray `pytest` invocation without make
+# cannot silently create a test database on the production host.
+TEST_DATABASE_URL ?= postgresql://boutique:boutique@localhost:55432/boutique
 TEST_ENV := DATABASE_URL=$(TEST_DATABASE_URL) CELERY_TASK_ALWAYS_EAGER=True
+
+# CI provides Postgres and Redis as job services, already running; locally we
+# start them from compose.yaml.
+#
+# CI must pass this as a *command-line* variable — `make test CI=true` — not as
+# an environment variable. MSYS make strips the environment (see the note
+# above), so `CI=true make test` silently keeps the compose dependency and the
+# difference would only show up on a developer's machine.
+SERVICES := $(if $(CI),,services-up)
 
 .DEFAULT_GOAL := help
 
 # ─── Quality gate ────────────────────────────────────────────────────────────
 
 .PHONY: check
-check: format-check lint mypy migration-check file-length task-names  ## Every gate. Must pass before committing.
+check: format-check lint mypy migration-check file-length task-names workflow-check  ## Every gate. Must pass before committing.
 	@echo ""
 	@echo "✓ all checks passed"
 
@@ -82,18 +91,22 @@ file-length:  ## No source file past its ceiling.
 task-names:  ## Every Celery task pins an explicit name=.
 	@uv run python scripts/check_task_names.py src
 
+.PHONY: workflow-check
+workflow-check:  ## deps.yml and its no-op twin are exact complements.
+	@uv run python scripts/check_workflow_invariants.py
+
 # ─── Tests ───────────────────────────────────────────────────────────────────
 
 .PHONY: test
-test: services-up  ## Parallel suite with branch coverage.
+test: $(SERVICES)  ## Parallel suite with branch coverage.
 	$(TEST_ENV) uv run pytest -n auto --cov --cov-report=term --cov-report=html src
 
 .PHONY: test-linear
-test-linear: services-up  ## Single process — use when debugging a failure.
+test-linear: $(SERVICES)  ## Single process — use when debugging a failure.
 	$(TEST_ENV) uv run pytest -vv src
 
 .PHONY: test-failed
-test-failed: services-up  ## Re-run only what failed last time.
+test-failed: $(SERVICES)  ## Re-run only what failed last time.
 	$(TEST_ENV) uv run pytest --last-failed -vv src
 
 .PHONY: coverage-floor

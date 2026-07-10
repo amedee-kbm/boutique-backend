@@ -1,0 +1,58 @@
+# Supply-chain gates. Only worth running when the dependency graph moved, so
+# this is path-filtered — which is exactly what makes deps-noop.yml necessary.
+#
+# INVARIANT: the `paths:` list below and the `paths-ignore:` list in
+# deps-noop.yml must remain exact complements, and the workflow `name:` and job
+# ids must match that file verbatim. See deps-noop.yml for why.
+
+name: Dependency checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - Makefile
+      - .github/workflows/deps.yml
+      - .github/workflows/deps-noop.yml
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - Makefile
+      - .github/workflows/deps.yml
+      - .github/workflows/deps-noop.yml
+
+concurrency:
+  group: deps-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  licences:
+    name: licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+
+      # Copyleft and source-available licences are rejected outright. Two
+      # reviewed exceptions live in pyproject.toml, each with a written reason.
+      - run: make licensecheck
+
+  vulnerabilities:
+    name: vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - run: make audit
