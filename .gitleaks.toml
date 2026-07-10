@@ -32,4 +32,17 @@ regexes = [
   # compose.yaml's local Postgres credentials. The container is not reachable
   # from outside the developer's machine, and the password is the username.
   '''postgresql://boutique:boutique@''',
+
+  # Test-fixture passwords, in src/conftest.py and the auth tests. They are long
+  # and odd on purpose — Django's validators reject short or common ones — which
+  # is exactly why the generic-api-key rule scores their entropy as a credential.
+  #
+  # Allowlisted by value, not by path: a real secret pasted into conftest.py must
+  # still be caught. Only these two literals are exempt.
+  #
+  # gitleaks scans commits, not the checkout, so these stay allowlisted even if
+  # the fixtures are renamed. Deleting them from the tree does not remove them
+  # from history.
+  '''correct-horse-battery-staple-42''',
+  '''another-quite-long-password-77''',
 ]
