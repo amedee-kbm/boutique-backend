@@ -62,9 +62,10 @@ Render runs **one free web service**.
 ## Consequences
 
 **The response is no longer constant-time.** Measured against the running container, with Django's
-*console* email backend: an unknown address returns in **18 ms**, a known one in **170 ms**. A real
-SMTP round trip widens that to roughly a second. The status code and body are identical — a test
-asserts it — but the clock is an enumeration oracle. This is a real regression against `SECURITY.md`,
+*console* email backend: an unknown address returns in **18 ms**, a known one in **170 ms**. Measured
+against the deployed service over real SMTP: **0.28 s unknown, 0.87 s known** — a threefold gap that
+needs no statistics to read. The status code and body are identical — a test asserts it — but the
+clock is an enumeration oracle. This is a real regression against `SECURITY.md`,
 and it is recorded there rather than left for someone to find.
 
 **An SMTP failure must never become a 500**, because a 500 for a known address and a 200 for an
