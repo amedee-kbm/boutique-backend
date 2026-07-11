@@ -2,7 +2,14 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR-0013](0013-django-sole-system-of-record-multi-tenant.md).
+
+The reasoning below was correct when written and is the most useful thing in this file: it
+records *why* Supabase kept chat and the storefront data, and the two blockers — nothing owned
+chat, nothing identified a returning guest — that had to clear before a cutover. ADR-0013 records
+what cleared them (Stream owns chat; guests gained no server identity because committing now needs
+an account) and adds what ADR-0001 did not contemplate at all: the product is **multi-tenant**, so
+Django is not merely *a* system of record but the *single* one, across many boutiques.
 
 ## Context
 

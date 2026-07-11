@@ -16,7 +16,7 @@ disagree with itself.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-django-neon-system-of-record.md) | Django + Neon becomes the system of record | Accepted |
+| [0001](0001-django-neon-system-of-record.md) | Django + Neon becomes the system of record | Superseded by [0013](0013-django-sole-system-of-record-multi-tenant.md) |
 | [0002](0002-two-repositories.md) | Two repositories, not a monorepo | Accepted |
 | [0003](0003-token-custody-in-the-bff.md) | Token custody lives in the Next BFF | Accepted |
 | [0004](0004-email-is-the-login-credential.md) | Email is the login credential | Accepted |
@@ -28,6 +28,7 @@ disagree with itself.
 | [0010](0010-no-third-party-code-verbatim.md) | No third-party code is carried verbatim | Accepted |
 | [0011](0011-src-layout-and-boutique-package.md) | `src/` layout, settings package named `boutique` | Accepted |
 | [0012](0012-the-queue-is-dormant.md) | The queue is dormant; the reset email is sent in the request | Accepted |
+| [0013](0013-django-sole-system-of-record-multi-tenant.md) | Django is the sole system of record; the platform is multi-tenant | Accepted |
 
 ## Template
 

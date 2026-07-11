@@ -1,637 +1,279 @@
-# Backend Rewrite — Django Ninja + Neon (from scratch)
+# Backend build plan — multi-tenant Django, from the scaffold
 
-> **Superseded in part.** This document's "Auth: phone-number login" decision was overtaken by
-> the implementation and is now formally superseded by
-> [ADR-0004](adr/0004-email-is-the-login-credential.md): **email is `USERNAME_FIELD`**.
-> `phone_number` remains a required, unique field, but it is not a credential.
->
-> Everything else here stands. Phases 0, 1 and 9 are largely done; Phases 2–8 are the plan of
-> record for the catalog, orders, favorites and R2 uploads.
+The checklist that takes this backend from its current state — a real `users` app and an empty
+`products` scaffold — to the API the Next.js storefront and admin consume. It replaces an earlier
+plan written for a **single seller**; that plan was deleted, not restored, because the product
+changed underneath it.
 
-Build checklist to take the backend from its current scaffold (one health endpoint, empty apps) to a
-complete API the Next.js frontend can consume. Written to be built **from scratch**, referencing the old
-Supabase/Drizzle code only for shape and business rules.
+Canonical decisions live in [ADR-0013](adr/0013-django-sole-system-of-record-multi-tenant.md):
+Django is the **single** system of record, Supabase is removed in full, and the platform is
+**multi-tenant** — many boutiques, Zita first. Where this document and an ADR disagree, the ADR
+wins.
+
+The old Supabase/Drizzle catalog is referenced **only for shape and business rules** — no code is
+carried verbatim ([ADR-0010](adr/0010-no-third-party-code-verbatim.md)).
+
+---
 
 ## Locked decisions
 
-- **Auth: Django owns identity fully.** Custom `User` (**phone-number login**) + JWT via `django-ninja-jwt`. No
-  Supabase Auth. The old `admins` allowlist table is dropped — "seller/admin" becomes an `is_seller` flag on `User`.
-- **Chat: excluded.** Do NOT port `chat_sessions`, `chat_messages`, `chat_message_items`, `push_subscriptions`.
-  GetStream owns chat; product inquiry snapshots ride as GetStream message `extraData` (frontend concern later).
-- **Guests never authenticate.** Orders are guest-allowed with contact details only — `orders.created_by` is
-  dropped. Favorites are the only customer-account feature.
-- **Fresh migrations.** Django is the schema source of truth now. No data migration from Supabase; `makemigrations`
-  from the models below and `migrate` straight onto Neon.
+- **No money moves through the app.** No cart total, no card capture, no carrier integration. An
+  order is a lead with item snapshots. Prices render in RWF.
+- **Multi-tenant, tenancy first.** Every domain table carries a **non-nullable** `store_id` FK.
+  Public **slug** in the API path (`/api/v1/stores/{slug}/…`), internal UUID `store_id` FK
+  everywhere. Built in Phase 1, before any catalog or order code, so nothing needs a `store_id`
+  retrofit.
+- **Seller = membership.** `Membership(user, boutique, role=OWNER|STAFF)`. `is_seller` is
+  computed (has ≥1 membership). Slug/membership mismatch → `403`.
+- **Committing needs an account.** Orders and favorites are **authenticated** (customer JWT).
+  Guests get browsing, a **device-local Bag**, and Tubaze chat — nothing that commits.
+- **Server-authoritative pricing.** An order posts `variant_id` + quantity; the server re-prices
+  from the variant and **stores a price snapshot**. The client never dictates price. The product
+  payload must therefore expose `variant_id`.
+- **"Bag", everywhere.** The device-local selection is the **Bag**. `Cart`/`Selection` do not
+  appear in code, schemas, or the order payload field name.
+- **Media on Cloudflare R2.** Django owns uploads via the `django-storages` S3 backend
+  (`endpoint_url` → R2); public catalog images are served from a **custom bucket domain**, not
+  signed URLs. Keys are tenant-scoped: `stores/{slug}/products/…`.
+- **Chat is Stream, transport only.** No chat rows persist here. `chat_*` and `push_subscriptions`
+  from the export are not ported.
 
-## Drizzle → Django model map
+---
 
-| Drizzle table | Django model | App | Notes |
+## Supabase/Drizzle → Django model map
+
+`store_id` is added to every row and is **not** in the export — the seed synthesizes it (Phase 6).
+
+| Supabase table | Django model | App | Notes |
 | --- | --- | --- | --- |
-| `admins` | — (dropped) | — | replaced by `User.is_seller` |
-| — | `User` | users | phone login, `is_seller` |
-| `categories` | `Category` | catalog | |
-| `products` | `Product` | catalog | |
-| `product_images` | `ProductImage` | catalog | circular FK with variant option |
-| `product_variant_groups` | `ProductVariantGroup` | catalog | |
-| `product_variant_options` | `ProductVariantOption` | catalog | circular FK with image |
-| `category_filters` | `CategoryFilter` | catalog | |
-| `category_filter_options` | `CategoryFilterOption` | catalog | |
-| `product_filter_values` | `ProductFilterValue` | catalog | composite PK |
-| `home_filters` | `HomeFilter` | catalog | |
-| `orders` | `Order` | orders | drop `created_by` |
-| `order_items` | `OrderItem` | orders | snapshot columns kept |
-| `favorites` | `Favorite` | favorites | composite PK, FK → User |
-| `chat_*`, `push_subscriptions` | — (excluded) | — | GetStream |
+| `admins` | — (dropped) | — | replaced by `Boutique` + `Membership` |
+| — | `Boutique` | boutiques | `slug` (public, in path), UUID `store_id` |
+| — | `Membership` | boutiques | `(user, boutique, role)`; `role ∈ {OWNER, STAFF}` |
+| — | `User` (exists) | users | global identity, email login; `is_seller` **computed**, not a column |
+| `categories` | `Category` | catalog | `+ store_id`; slug unique **per store** |
+| `products` | `Product` | catalog | `+ store_id`; slug unique per store; `visible`, `featured` |
+| `product_images` | `ProductImage` | catalog | `+ store_id`; URL is an R2 public URL; circular FK with option |
+| `product_variant_groups` | `ProductVariantGroup` | catalog | `+ store_id` |
+| `product_variant_options` | `ProductVariantOption` | catalog | `+ store_id`; **`variant_id` exposed in payload** |
+| `category_filters` | `CategoryFilter` | catalog | `+ store_id`; 0 rows in export, code path stays |
+| `category_filter_options` | `CategoryFilterOption` | catalog | `+ store_id`; 0 rows |
+| `product_filter_values` | `ProductFilterValue` | catalog | composite PK `(product, option)`; 0 rows |
+| `home_filters` | `HomeFilter` | catalog | `+ store_id` |
+| `orders` | `Order` | orders | **authed**; `+ store_id`, `+ customer` FK; **no** `created_by`-as-guest |
+| `order_items` | `OrderItem` | orders | snapshot columns kept; `+ variant`, `+ price_snapshot` |
+| `favorites` | `Favorite` | favorites | `(customer, store, product)`; account-gated |
+| `chat_*`, `push_subscriptions` | — (excluded) | — | Stream owns chat; push is a fresh Django pipe (Phase 5) |
 
-Type mapping: `uuid` → `UUIDField(default=uuid4)`, `numeric(10,2)` → `DecimalField(max_digits=10, decimal_places=2)`,
-`text` → `TextField`, `slug unique` → `SlugField(unique=True)`, `timestamp defaultNow` → `auto_now_add`,
-`updatedAt` → `auto_now`, `pgEnum` → `TextChoices`.
+Type mapping: `uuid → UUIDField(default=uuid4)`, `numeric(10,2) → DecimalField(max_digits=10,
+decimal_places=2)`, `text → TextField`, `slug unique → SlugField` **with a per-store
+`UniqueConstraint`, not `unique=True`**, `timestamp defaultNow → auto_now_add`, `updatedAt →
+auto_now`, `pgEnum → TextChoices`.
+
+---
+
+## What the reference repos taught us
+
+Two local repos were studied for pattern, not for code. What we adopt and what we reject:
+
+| From | Adopt | Reject |
+| --- | --- | --- |
+| `revel-backend` (multi-tenant event platform) | Owner has implicit all-permissions; operational capabilities open, governance (members/settings) gated; **one `has_permission` choke-point**; store-scoped credential models | Its granular JSONField permission map + per-event overrides — right for many-events delegation, over-built for one governance boundary (see ADR-0013) |
+| `ecommerce-backend` (multi-store catalog) | Price **snapshot** on the order line at time of order; store-scoped credentials as their own models | **Nullable/`SET_NULL` store FK** (we require non-null); global-unique slugs (we scope per store); treebeard categories and the seller/packer/listing marketplace split (we stay flat) |
 
 ---
 
 ## Phase 0 — Dependencies & project config
 
-- [ ] Add deps (edit `backend/pyproject.toml`, then `uv sync`):
-  - `psycopg[binary]` — Postgres/Neon driver (psycopg3, Django 6 default)
-  - `django-ninja-extra` + `django-ninja-jwt` — JWT auth controllers + `JWTAuth`
-  - `django-cors-headers` — CORS for the Next.js origin
-  - `django-storages[s3]` — R2 uploads via the S3 backend (boto3 under the hood)
-  - `django-environ` — env parsing (`DATABASE_URL`, secrets)
-- [ ] Create `backend/.env` (gitignored) and `backend/.env.example`:
-  ```dotenv
-  DJANGO_SECRET_KEY=change-me
-  DJANGO_DEBUG=True
-  DATABASE_URL=postgresql://USER:PASS@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require
-  CORS_ORIGINS=http://localhost:3000
-  # R2 (Phase 8)
-  R2_BUCKET=product-images
-  R2_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
-  R2_ACCESS_KEY_ID=
-  R2_SECRET_ACCESS_KEY=
-  R2_PUBLIC_HOST=pub-xxxx.r2.dev
-  ```
-- [ ] Rewrite `backend/config/settings.py` env-driven section:
-  ```python
-  import environ
-  env = environ.Env(DJANGO_DEBUG=(bool, False))
-  environ.Env.read_env(BASE_DIR / ".env")
-
-  SECRET_KEY = env("DJANGO_SECRET_KEY")
-  DEBUG = env("DJANGO_DEBUG")
-  ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
-
-  INSTALLED_APPS = [
-      "django.contrib.admin",
-      "django.contrib.auth",
-      "django.contrib.contenttypes",
-      "django.contrib.sessions",
-      "django.contrib.messages",
-      "django.contrib.staticfiles",
-      "corsheaders",
-      "ninja_extra",
-      "apps.users",
-      "apps.catalog",
-      "apps.orders",
-      "apps.favorites",
-  ]
-
-  MIDDLEWARE = [
-      "corsheaders.middleware.CorsMiddleware",       # first
-      "django.middleware.security.SecurityMiddleware",
-      "django.contrib.sessions.middleware.SessionMiddleware",
-      "django.middleware.common.CommonMiddleware",
-      "django.middleware.csrf.CsrfViewMiddleware",
-      "django.contrib.auth.middleware.AuthenticationMiddleware",
-      "django.contrib.messages.middleware.MessageMiddleware",
-      "django.middleware.clickjacking.XFrameOptionsMiddleware",
-  ]
-
-  DATABASES = {"default": env.db("DATABASE_URL")}
-  # Neon pooler is PgBouncer transaction mode — do not hold connections open.
-  DATABASES["default"]["CONN_MAX_AGE"] = 0
-  DATABASES["default"].setdefault("OPTIONS", {})
-  DISABLE_SERVER_SIDE_CURSORS = True
-
-  AUTH_USER_MODEL = "users.User"
-  CORS_ALLOWED_ORIGINS = env.list("CORS_ORIGINS")
-
-  NINJA_JWT = {
-      "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
-      "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-      "USER_ID_FIELD": "id",
-  }
-  ```
-  > Verify against installed versions: the `STORAGES` block (Phase 8), `env.db()` parsing of the `sslmode`
-  > query param, and that psycopg3 is picked up (`ENGINE` should be `django.db.backends.postgresql`).
+- [ ] Add deps with **uv** (`uv add`, never pip): `django-storages[s3]` (R2 uploads),
+      `pywebpush` (Phase 5). `psycopg[binary]`, `django-ninja-extra`, `django-ninja-jwt`,
+      `django-cors-headers`, `django-environ` are already in.
+- [ ] R2 env (gitignored `.env` + `.env.example`): `R2_BUCKET`, `R2_ENDPOINT`
+      (`https://ACCOUNT.r2.cloudflarestorage.com`), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+      `R2_PUBLIC_HOST` (the custom bucket domain).
+- [ ] `STORAGES["default"]` → S3 backend pointed at `endpoint_url = R2_ENDPOINT`, `querystring_auth
+      = False` (public objects), `custom_domain = R2_PUBLIC_HOST`. Verify against the installed
+      `django-storages` version — the setting names have moved between releases.
+- [ ] Register the new apps: `apps.boutiques`, `apps.catalog`, `apps.orders`, `apps.favorites`.
+- [ ] The Neon pooler traps in [engineering-notes.md](engineering-notes.md) still apply:
+      `CONN_MAX_AGE=0`, `DISABLE_SERVER_SIDE_CURSORS=True`, and `list(...)` before `.iterator()`.
 
 ---
 
-## Phase 1 — Users app (custom User + JWT auth)
+## Phase 1 — Tenancy (built first)
 
-- [ ] Keep and flesh out the existing `backend/apps/users/` — it already has a phone-based `User`
-      ([backend/apps/users/models.py](backend/apps/users/models.py)) and `UserManager`. Add the fields the API
-      needs (UUID pk, `is_seller`, `is_active`, `is_staff`, `created_at`). Don't delete the app.
-- [ ] `apps/users/models.py`:
+Nothing below this phase gets written until it stands, so no table is born without a `store_id`.
+
+- [ ] `apps/boutiques/models.py`:
   ```python
-  import uuid
-  from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
-  from django.db import models
-  from .managers import UserManager
-
-  class User(AbstractBaseUser, PermissionsMixin):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      name = models.CharField(max_length=255, blank=True)
-      phone_number = models.CharField(max_length=20, unique=True)
-      is_seller = models.BooleanField(default=False)   # admin/seller
-      is_active = models.BooleanField(default=True)
-      is_staff = models.BooleanField(default=False)
+  class Boutique(models.Model):
+      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)  # the store_id
+      slug = models.SlugField(max_length=255, unique=True)   # public, appears in the API path
+      name = models.CharField(max_length=255)
       created_at = models.DateTimeField(auto_now_add=True)
 
-      objects = UserManager()
-      USERNAME_FIELD = "phone_number"
-      REQUIRED_FIELDS = ["name"]
+  class Membership(models.Model):
+      class Role(models.TextChoices):
+          OWNER = "owner", "Owner"
+          STAFF = "staff", "Staff"
+      user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                               related_name="memberships")
+      boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name="memberships")
+      role = models.CharField(max_length=8, choices=Role.choices)
 
       class Meta:
-          db_table = "users"
-
-      def __str__(self):
-          return self.phone_number
+          constraints = [models.UniqueConstraint(fields=["user", "boutique"],
+                                                  name="uniq_membership")]
   ```
-- [ ] `apps/users/managers.py` (your existing phone-based manager; add `is_seller` to the superuser defaults):
-  ```python
-  from django.contrib.auth.base_user import BaseUserManager
-
-  class UserManager(BaseUserManager):
-      def create_user(self, phone_number, password=None, **extra):
-          if not phone_number:
-              raise ValueError("Phone number is required")
-          user = self.model(phone_number=phone_number, **extra)
-          user.set_password(password)
-          user.save(using=self._db)
-          return user
-
-      def create_superuser(self, phone_number, password=None, **extra):
-          extra.update(is_staff=True, is_superuser=True, is_seller=True)
-          return self.create_user(phone_number, password, **extra)
-  ```
-- [ ] `apps/users/api.py` — register JWT controllers + custom register/me. In `api/v1/router.py`
-  switch `NinjaAPI` → `NinjaExtraAPI` (ninja-extra), then:
-  ```python
-  from ninja_extra import NinjaExtraAPI
-  from ninja_jwt.controller import NinjaJWTDefaultController
-
-  api = NinjaExtraAPI(version="1.0.0", title="Boutique API", docs_url="/docs/")
-  api.register_controllers(NinjaJWTDefaultController)   # POST /token/pair, /token/refresh, /token/verify
-  ```
-  The `/token/pair` input field follows `USERNAME_FIELD`, so it takes `phone_number` + `password`.
-- [ ] Custom auth endpoints (`apps/users/api.py`), added as a plain router on the api:
-  ```python
-  from ninja import Router, Schema
-  from ninja_jwt.authentication import JWTAuth
-  from .models import User
-
-  auth_router = Router(tags=["auth"])
-
-  class RegisterIn(Schema):
-      phone_number: str
-      password: str
-      name: str = ""
-
-  class UserOut(Schema):
-      id: str
-      phone_number: str
-      name: str
-      is_seller: bool
-
-  @auth_router.post("/register", response=UserOut)
-  def register(request, data: RegisterIn):
-      return User.objects.create_user(
-          phone_number=data.phone_number, password=data.password, name=data.name,
-      )
-
-  @auth_router.get("/me", response=UserOut, auth=JWTAuth())
-  def me(request):
-      return request.auth   # JWTAuth sets request.auth = User instance
-  ```
-- [ ] Seller guard used by every admin mutation/read:
-  ```python
-  from ninja_jwt.authentication import JWTAuth
-
-  class SellerAuth(JWTAuth):
-      def authenticate(self, request, token):
-          user = super().authenticate(request, token)
-          return user if user and user.is_seller else None
-  ```
-  Use `auth=SellerAuth()` on admin routes; `auth=JWTAuth()` on customer routes (favorites); no `auth` on public.
+- [ ] `store_id` is the FK pattern every later table repeats:
+      `store = models.ForeignKey("boutiques.Boutique", on_delete=models.PROTECT, db_column="store_id")`
+      — **non-nullable**, `PROTECT` so a boutique with catalog cannot be deleted out from under it.
+- [ ] **Tenant resolution** as one dependency, not per-view logic: resolve the `{slug}` path param
+      to a `Boutique`; for seller routes, require a `Membership(request.user, boutique)` and
+      **`403` on mismatch** (not `401` — the two-status rule in `CLAUDE.md`).
+- [ ] **`is_seller` is computed** — `user.memberships.exists()` — never a column. A typed manager
+      or property, so `mypy --strict` carries it.
+- [ ] **`has_permission(membership, capability)`** is the single authorization choke-point.
+      Operational capabilities (orders/inbox, Tubaze, catalog) return `True` for both roles;
+      governance (`manage_members`, `edit_store_settings`) returns `True` only for `OWNER`. Every
+      seller controller calls this; no controller writes `role == OWNER` inline. This is the seam
+      ADR-0013 names for a future enum→permission-map graduation.
+- [ ] **`/me`** returns the user plus `memberships: [{ store, role }]` — how the admin UI learns
+      its tenant(s) and whether to show OWNER-only controls.
+- [ ] Tests: a seller scoped to boutique A gets `403` on boutique B's path; a customer with no
+      membership reads `is_seller = false`; the permission choke-point denies STAFF on a governance
+      capability and allows it on an operational one. Prove each gate red before trusting it green
+      ([ADR-0009](adr/0009-a-gate-must-be-seen-to-fail.md)).
 
 ---
 
-## Phase 2 — Catalog models
+## Phase 2 — Catalog (+ R2), at parity
 
-`python manage.py startapp catalog`; `apps/catalog/models.py`. Note the **circular FK** between
-`ProductImage.option` and `ProductVariantOption.image` — use a string reference and `SET_NULL`.
+The catalog is a **live, load-bearing** system today: storefront reads + admin CRUD, server-side
+filtering, multi-facet AND/OR, price ranges, sort, slugs, cover images, live counts. Django
+**replicates** it. Every model gains `store_id`; every query is filtered by the resolved tenant;
+slugs are unique **per store**.
 
-- [ ] Core:
-  ```python
-  import uuid
-  from django.db import models
+Endpoints owed to the frontend (all under `/api/v1/stores/{slug}/`):
 
-  class Category(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      name = models.TextField()
-      slug = models.SlugField(unique=True, max_length=255)
-      created_at = models.DateTimeField(auto_now_add=True)
-      class Meta: db_table = "categories"
-
-  class Product(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      name = models.TextField()
-      slug = models.SlugField(unique=True, max_length=255)
-      description = models.TextField(null=True, blank=True)
-      price = models.DecimalField(max_digits=10, decimal_places=2)
-      category = models.ForeignKey(
-          Category, null=True, blank=True, on_delete=models.PROTECT,   # blocks deleting a used category
-          related_name="products", db_column="category_id",
-      )
-      visible = models.BooleanField(default=True)
-      featured = models.BooleanField(default=False)
-      created_at = models.DateTimeField(auto_now_add=True)
-      updated_at = models.DateTimeField(auto_now=True)
-      class Meta: db_table = "products"
-  ```
-- [ ] Images + variants (circular FK):
-  ```python
-  class ProductImage(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images", db_column="product_id")
-      url = models.TextField()
-      alt = models.TextField(null=True, blank=True)
-      position = models.IntegerField(default=0)
-      option = models.ForeignKey(
-          "ProductVariantOption", null=True, blank=True, on_delete=models.SET_NULL,
-          related_name="option_images", db_column="option_id",
-      )
-      class Meta: db_table = "product_images"
-
-  class ProductVariantGroup(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="variant_groups", db_column="product_id")
-      name = models.TextField()
-      position = models.IntegerField(default=0)
-      class Meta: db_table = "product_variant_groups"
-
-  class ProductVariantOption(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      group = models.ForeignKey(ProductVariantGroup, on_delete=models.CASCADE, related_name="options", db_column="group_id")
-      value = models.TextField()
-      position = models.IntegerField(default=0)
-      image = models.ForeignKey(
-          ProductImage, null=True, blank=True, on_delete=models.SET_NULL,
-          related_name="+", db_column="image_id",
-      )
-      hex = models.TextField(null=True, blank=True)
-      class Meta: db_table = "product_variant_options"
-  ```
-- [ ] Filters + home strip:
-  ```python
-  class CategoryFilter(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="filters", db_column="category_id")
-      name = models.TextField()
-      position = models.IntegerField(default=0)
-      class Meta: db_table = "category_filters"
-
-  class CategoryFilterOption(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      filter = models.ForeignKey(CategoryFilter, on_delete=models.CASCADE, related_name="options", db_column="filter_id")
-      value = models.TextField()
-      position = models.IntegerField(default=0)
-      class Meta: db_table = "category_filter_options"
-
-  class ProductFilterValue(models.Model):
-      pk = models.CompositePrimaryKey("product", "option")   # Django 5.2+/6.0
-      product = models.ForeignKey(Product, on_delete=models.CASCADE, db_column="product_id")
-      option = models.ForeignKey(CategoryFilterOption, on_delete=models.CASCADE, db_column="option_id")
-      class Meta: db_table = "product_filter_values"
-
-  class HomeFilter(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      label = models.TextField()
-      href = models.TextField()
-      position = models.IntegerField(default=0)
-      visible = models.BooleanField(default=True)
-      created_at = models.DateTimeField(auto_now_add=True)
-      updated_at = models.DateTimeField(auto_now=True)
-      class Meta: db_table = "home_filters"
-  ```
-  > `CompositePrimaryKey` fallback if the version balks: give the model a normal `id` and add
-  > `class Meta: constraints = [models.UniqueConstraint(fields=["product", "option"], name="uniq_pfv")]`.
+- [ ] **Product list** with the existing filter / facet / price / sort params, **visible-only** for
+      the storefront.
+- [ ] **Facet-count** endpoint — the "Show N results" meta the current UI renders.
+- [ ] **Category index** (with product counts + cover image), **category-by-slug**,
+      **product-by-slug** (variants, images, filter values) — the product payload **exposes
+      `variant_id`**, which the Bag stores and the order posts.
+- [ ] **Image upload** → R2, returning the public custom-domain URL. Key `stores/{slug}/products/…`.
+- [ ] **Atomic product-create** (product + variants + images in one transaction) — the parity
+      replacement for today's single Drizzle transaction.
+- [ ] Admin writes require a seller membership + the operational capability; storefront reads are
+      public but still tenant-scoped by slug.
+- [ ] Querysets: materialize ids with `list(...)` before any `.iterator()` (Neon pooler).
 
 ---
 
-## Phase 3 — Orders & Favorites models
+## Phase 3 — Orders
 
-- [ ] `apps/orders/models.py` (drop `created_by`; keep snapshot columns so a line renders after the product changes):
+- [ ] **Authenticated only** (customer JWT). There is no open/guest order endpoint — this deletes
+      the unauthenticated-write abuse surface entirely.
+- [ ] **Server-authoritative price snapshot.** The create posts `bag` (a list of `variant_id` +
+      quantity) + the contact details; the service re-prices each line from the variant and writes
+      `price_snapshot`, `name_snapshot`, `image_url_snapshot` onto the `OrderItem`. The client
+      never sends a price.
   ```python
-  import uuid
-  from django.db import models
-  from apps.catalog.models import Product
-
   class Order(models.Model):
       class Status(models.TextChoices):
           NEW = "new", "New"
-          CONTACTED = "contacted", "Contacted"
-          DONE = "done", "Done"
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      guest_name = models.TextField()
+          CONFIRMED = "confirmed", "Confirmed"
+          FULFILLED = "fulfilled", "Fulfilled"
+          CANCELLED = "cancelled", "Cancelled"
+      store = models.ForeignKey("boutiques.Boutique", on_delete=models.PROTECT, db_column="store_id")
+      customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                   related_name="orders")
+      status = models.CharField(max_length=10, choices=Status.choices, default=Status.NEW)
+      # contact snapshot taken from the account at order time:
+      contact_name = models.TextField()
       phone = models.TextField()
-      address = models.TextField()
-      note = models.TextField(null=True, blank=True)
-      status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
+      delivery_address = models.TextField()
+      idempotency_key = models.CharField(max_length=255)
       created_at = models.DateTimeField(auto_now_add=True)
-      class Meta: db_table = "orders"
 
-  class OrderItem(models.Model):
-      id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-      order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items", db_column="order_id")
-      product = models.ForeignKey(Product, null=True, on_delete=models.SET_NULL, db_column="product_id")
-      position = models.IntegerField(default=0)
-      name_snapshot = models.TextField()
-      color_value = models.TextField(null=True, blank=True)
-      size_value = models.TextField(null=True, blank=True)
-      quantity = models.IntegerField(default=1)
-      price_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
-      image_url_snapshot = models.TextField(null=True, blank=True)
-      class Meta: db_table = "order_items"
-  ```
-- [ ] `apps/favorites/models.py`:
-  ```python
-  from django.conf import settings
-  from django.db import models
-  from apps.catalog.models import Product
-
-  class Favorite(models.Model):
-      pk = models.CompositePrimaryKey("user", "product")
-      user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column="user_id")
-      product = models.ForeignKey(Product, on_delete=models.CASCADE, db_column="product_id")
-      created_at = models.DateTimeField(auto_now_add=True)
-      class Meta: db_table = "favorites"
-  ```
-
----
-
-## Phase 4 — Fresh migrations onto Neon
-
-- [ ] `python manage.py makemigrations users catalog orders favorites`
-- [ ] Inspect the generated SQL once: `python manage.py sqlmigrate catalog 0001` (confirm circular FK and
-      composite PK come out right).
-- [ ] `python manage.py migrate` (runs against Neon via `DATABASE_URL`).
-- [ ] Seed the seller: `python manage.py createsuperuser` (sets `is_seller=True` via `create_superuser`).
-- [ ] Sanity: `python manage.py dbshell` → `\dt` shows `users`, `products`, `orders`, etc.
-
----
-
-## Phase 5 — Ninja schemas (response shapes)
-
-Mirror what the frontend currently reads from Drizzle so the later frontend simplification is a straight swap.
-Put these in each app's `schemas.py`. Prefer `ModelSchema` for flat rows, `Schema` for nested/computed.
-
-- [ ] Flat example:
-  ```python
-  from ninja import ModelSchema
-  from apps.catalog.models import Category
-
-  class CategoryOut(ModelSchema):
       class Meta:
-          model = Category
-          fields = ["id", "name", "slug"]
+          constraints = [models.UniqueConstraint(fields=["store", "idempotency_key"],
+                                                  name="uniq_order_idem")]
   ```
-- [ ] Nested product (PDP / admin detail):
-  ```python
-  from ninja import Schema
-  from decimal import Decimal
-
-  class ImageOut(Schema):
-      id: str
-      url: str
-      alt: str | None = None
-      position: int
-      option_id: str | None = None
-
-  class VariantOptionOut(Schema):
-      id: str
-      value: str
-      position: int
-      hex: str | None = None
-      image_id: str | None = None
-
-  class VariantGroupOut(Schema):
-      id: str
-      name: str
-      position: int
-      options: list[VariantOptionOut]
-
-  class ProductDetailOut(Schema):
-      id: str
-      name: str
-      slug: str
-      description: str | None = None
-      price: Decimal          # see note below
-      category_id: str | None = None
-      visible: bool
-      featured: bool
-      images: list[ImageOut]
-      variant_groups: list[VariantGroupOut]
-  ```
-  > **Price serialization:** Drizzle returned `numeric` as a **string**. Pydantic v2 emits `Decimal` as a JSON
-  > number. Either (a) let the frontend accept a number (it's being rewritten anyway), or (b) type `price` as
-  > `str` in the schema and coerce. Pick one and be consistent across list + detail schemas.
+- [ ] **Status vocabulary is four states:** `new → confirmed → fulfilled → cancelled`. (The
+      WhatsApp-flow "contacted" state was considered and dropped; revisit only if the seller asks
+      for a "reached out, awaiting confirm" signal.)
+- [ ] **Idempotency key** on create, unique per store — a double-submit returns the first order,
+      not a second.
+- [ ] Contact details live on the **account**; prefill is a normal authed `/me` + saved-addresses
+      fetch, snapshotted onto the order at creation.
+- [ ] **Inbox is poll-based** (realtime is gone). The list endpoint supports a `since`/cursor or
+      returns a new-count so polling stays cheap. Seller-scoped by membership.
+- [ ] If an order confirmation email/push is dispatched on commit, note that
+      `transaction.on_commit` **does not fire under `pytest-django`** — assert dispatch the way
+      [engineering-notes.md](engineering-notes.md) prescribes, or the test passes vacuously.
 
 ---
 
-## Phase 6 — Read endpoints
+## Phase 4 — Favorites & accounts
 
-Split by authorization scope, exactly like the old `*-queries.ts` (storefront filters `visible=True`, admin does
-not). Put query logic in `apps/<app>/selectors.py`, HTTP wiring in `apps/<app>/api.py`.
-
-- [ ] Storefront (public, no auth):
-  - `GET /storefront/products/` — visible feed; featured first, then newest. Supports `?category=<slug>` and
-    filter query params. Prefetch images + variant groups/options.
-  - `GET /storefront/products/{slug}/` — full PDP detail.
-  - `GET /storefront/categories/` — visible category index.
-  - `GET /storefront/home-filters/` — visible rows by position; fall back to categories when empty.
-- [ ] Admin (`auth=SellerAuth()`):
-  - `GET /products/` — full list incl. hidden; `GET /products/{id}/` — detail.
-  - `GET /categories/` — list with filter/option children.
-  - `GET /orders/` — inbox list (+ `new` count for the badge).
-  - `GET /overview/stats/` — product count, category count, order counts (chat count omitted — GetStream).
-- [ ] Customer (`auth=JWTAuth()`):
-  - `GET /storefront/favorites/` — favorited product ids.
-  - `GET /storefront/favorites/products/` — full card data.
-- [ ] Bag utilities (public POST):
-  - `POST /storefront/bag/availability/` — ids in → still-visible subset out.
-  - `POST /storefront/bag/suggestions/` — bag ids in → same-category suggestion cards out.
-- [ ] Selector example with prefetch:
+- [ ] `Favorite` is `(customer, store, product)`, account-gated — list / add / remove for the
+      logged-in customer, scoped to the store in the path.
   ```python
-  def get_product_by_slug(slug: str):
-      return (
-          Product.objects
-          .filter(slug=slug, visible=True)
-          .prefetch_related("images", "variant_groups__options")
-          .first()
-      )
+  class Favorite(models.Model):
+      customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+      store = models.ForeignKey("boutiques.Boutique", on_delete=models.CASCADE, db_column="store_id")
+      product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE)
+      created_at = models.DateTimeField(auto_now_add=True)
+
+      class Meta:
+          constraints = [models.UniqueConstraint(fields=["customer", "store", "product"],
+                                                  name="uniq_favorite")]
   ```
+- [ ] Customer account carries name, phone, and **saved delivery addresses** (Phase 3 prefill).
+      Email login already exists ([ADR-0004](adr/0004-email-is-the-login-credential.md)); this
+      subsystem is now **core**, required for both ordering and favoriting.
+- [ ] The customer-visibility guardrail (ADR-0013): the admin's customer views select only users
+      with an order or favorite **in that admin's store** — never the global user table.
 
 ---
 
-## Phase 7 — Write endpoints (mutations)
+## Phase 5 — Push (PWA-aware, one Django-owned pipe)
 
-All admin mutations take `auth=SellerAuth()`. Order placement is public. Favorites take `auth=JWTAuth()`.
-Wrap multi-row writes in `transaction.atomic()`.
+A PWA has one service worker and one background push subscription, so there is exactly **one**
+background-push provider, and it is ours.
 
-- [ ] Categories: `POST /categories/`, `PUT /categories/{id}/`, `DELETE /categories/{id}/` (PROTECT surfaces a
-      clean 409 when products exist), filter + option CRUD, reorder.
-- [ ] Products: `POST /products/`, `POST /products/full/` (product + images + variants in one atomic call),
-      `PUT /products/{id}/`, `DELETE /products/{id}/`, `PATCH /products/{id}/visibility/`,
-      `PATCH /products/{id}/featured/`, `POST /products/bulk/`.
-- [ ] Variants: group create/delete/reorder, option create/delete, `PATCH` option image + hex.
-- [ ] Product images: `PUT /products/images/reorder/`, `PATCH /products/images/{id}/option/`
-      (upload/delete in Phase 8).
-- [ ] Product filter values: `POST /products/{id}/filter-values/` (set/unset an option for a product).
-- [ ] Home filters: `PUT /merchandising/home-filters/` — replace the whole strip atomically.
-- [ ] Orders: `POST /storefront/orders/` (public — creates order + item snapshots),
-      `PATCH /orders/{id}/status/` (admin).
-- [ ] Favorites: `POST /storefront/favorites/`, `DELETE /storefront/favorites/{product_id}/`.
-- [ ] Order create example (snapshotting):
-  ```python
-  from django.db import transaction
-
-  @router.post("/storefront/orders/", response=OrderOut)
-  def place_order(request, data: PlaceOrderIn):
-      with transaction.atomic():
-          order = Order.objects.create(
-              guest_name=data.guest_name, phone=data.phone, address=data.address, note=data.note,
-          )
-          OrderItem.objects.bulk_create([
-              OrderItem(
-                  order=order, product_id=i.product_id, position=idx,
-                  name_snapshot=i.name, price_snapshot=i.price, quantity=i.quantity,
-                  color_value=i.color, size_value=i.size, image_url_snapshot=i.image_url,
-              )
-              for idx, i in enumerate(data.items)
-          ])
-      return order
-  ```
+- [ ] VAPID web-push via `pywebpush`: one subscription, our service worker. Synchronous send is
+      fine at this volume (the queue stays dormant — [ADR-0012](adr/0012-the-queue-is-dormant.md)).
+- [ ] Carries **order-status** (targeted to the subscriber) and **new-arrivals** (per-store
+      broadcast; the subscription row carries `store_id`).
+- [ ] Foreground/in-app chat pings come free from Stream over its websocket — **no** web-push for
+      chat. (Post-MVP, background chat pings ride this *same* pipe via a Stream `message.new`
+      webhook — never a second provider.)
 
 ---
 
-## Phase 8 — R2 image storage
+## Phase 6 — Seed Zita as store #1
 
-- [ ] `STORAGES` in `settings.py` (Django 6 storage API):
-  ```python
-  STORAGES = {
-      "default": {
-          "BACKEND": "storages.backends.s3.S3Storage",
-          "OPTIONS": {
-              "bucket_name": env("R2_BUCKET"),
-              "endpoint_url": env("R2_ENDPOINT"),          # https://ACCOUNT.r2.cloudflarestorage.com
-              "access_key": env("R2_ACCESS_KEY_ID"),
-              "secret_key": env("R2_SECRET_ACCESS_KEY"),
-              "region_name": "auto",
-              "custom_domain": env("R2_PUBLIC_HOST"),        # pub-xxxx.r2.dev  → clean public URLs
-              "querystring_auth": False,                     # public objects, no signed query string
-              "signature_version": "s3v4",
-              "addressing_style": "virtual",
-          },
-      },
-      "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-  }
-  ```
-- [ ] Upload endpoint — mirrors the old `{productId}/{timestamp}-{index}.{ext}` key pattern:
-  ```python
-  import time
-  from pathlib import Path
-  from django.core.files.storage import default_storage
-  from ninja import File, Router
-  from ninja.files import UploadedFile
+The export (`data/supabase-export.json`) is single-tenant: 5 categories, 67 products, 134 variant
+groups, 372 variant options, 67 images, 1 home filter, and **0** filter rows. It has `admins`, not
+stores. The seed is a **schema-aware transformation**, not `loaddata`:
 
-  @router.post("/{product_id}/images/", auth=SellerAuth(), response=ImageOut)
-  def upload_image(request, product_id: uuid.UUID, file: UploadedFile = File(...)):
-      product = Product.objects.get(id=product_id)
-      ext = Path(file.name).suffix
-      key = f"{product_id}/{int(time.time() * 1000)}{ext}"
-      saved = default_storage.save(key, file)          # streams to R2
-      pos = product.images.count()
-      return ProductImage.objects.create(product=product, url=default_storage.url(saved), position=pos)
-  ```
-- [ ] Delete endpoint — remove from R2 then the row:
-  ```python
-  @router.delete("/images/{image_id}/", auth=SellerAuth())
-  def delete_image(request, image_id: uuid.UUID):
-      img = ProductImage.objects.get(id=image_id)
-      # public URL → key: strip the R2_PUBLIC_HOST prefix
-      key = img.url.split(f"{env('R2_PUBLIC_HOST')}/", 1)[-1]
-      default_storage.delete(key)
-      img.delete()
-      return {"ok": True}
-  ```
-  > Store the object **key** alongside `url` (or derive reliably) so deletes never depend on brittle URL parsing.
+- [ ] Create **Zita** as `Boutique(slug="zita")` — store row #1 — and seed its `Membership` rows
+      from the two `admins`.
+- [ ] Stamp Zita's `store_id` onto every imported category, product, variant, image, home filter.
+- [ ] Copy the 128 storage objects into R2 under `stores/zita/products/…`. The export already
+      carries a precomputed `r2Key` per asset, so this is a copy, not a re-key; rewrite each
+      `ProductImage.url` to the R2 public URL.
+- [ ] Idempotent and re-runnable — a management command, not a migration.
+- [ ] Stand up a **staging instance with the seeded Zita store** as the frontend's acceptance
+      target, and publish OpenAPI (Ninja emits it free) for the frontend's client codegen.
 
 ---
 
-## Phase 9 — API assembly & errors
+## Frontend cutover order (recap)
 
-- [ ] `api/v1/router.py`: register every app router under a clear prefix.
-  ```python
-  from apps.users.api import auth_router
-  from apps.catalog.api import router as catalog_router
-  from apps.orders.api import router as orders_router
-  from apps.favorites.api import router as favorites_router
-
-  api.add_router("/auth/", auth_router)
-  api.add_router("/", catalog_router)          # /products, /categories, /storefront/...
-  api.add_router("/", orders_router)
-  api.add_router("/", favorites_router)
-  ```
-- [ ] Global exception handlers (consistent JSON errors the frontend can branch on):
-  ```python
-  from django.db import IntegrityError
-  from ninja_extra import exceptions
-
-  @api.exception_handler(Product.DoesNotExist)   # and others
-  def not_found(request, exc):
-      return api.create_response(request, {"detail": "Not found"}, status=404)
-
-  @api.exception_handler(IntegrityError)
-  def conflict(request, exc):
-      return api.create_response(request, {"detail": "Conflict"}, status=409)
-  ```
-- [ ] Confirm CORS: preflight from `http://localhost:3000` succeeds on a protected route with `Authorization`.
-
----
-
-## Phase 10 — Verify (drive the real API, not just unit tests)
-
-- [ ] `python manage.py runserver` → open `/api/v1/docs/`; every router shows up.
-- [ ] Auth round-trip:
-  ```bash
-  # get tokens
-  curl -X POST localhost:8000/api/v1/token/pair -H 'content-type: application/json' \
-    -d '{"phone_number":"+250788000000","password":"..."}'
-  # call a protected admin read
-  curl localhost:8000/api/v1/products/ -H "Authorization: Bearer <access>"
-  ```
-- [ ] Smoke the critical paths unmocked: register customer → login → favorite a product; create product with an
-      image upload (lands in R2, public URL resolves) → toggle visibility → delete; place a guest order → move
-      status `new → contacted → done`; storefront feed returns only `visible=True`.
-- [ ] Confirm an uploaded image URL opens in a browser and a deleted one 404s in R2.
-
----
-
-## Open items to resolve while building
-
-- **Price as string vs number** (Phase 5) — decide once, apply to all product schemas.
-- **`CompositePrimaryKey` support** on the installed Django — fall back to `UniqueConstraint` + surrogate id if needed.
-- **Slug generation** — old code slugified on the client (`shared/lib/slug`). Decide whether the API slugifies
-  server-side on create or trusts a supplied slug.
-- **Pagination** — the admin product/order lists used client tables; add Ninja pagination (`paginate`) if lists grow.
+The frontend adopts **after**, surface-by-surface behind flags, because the catalog is
+Drizzle-direct and a big-bang is riskier: catalog reads → admin catalog + image storage →
+customer-auth transport → favorites → orders (now auth-gated at checkout) → inbox polling →
+**delete the Drizzle/Supabase clients last.**
