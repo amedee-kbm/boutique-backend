@@ -15,6 +15,8 @@ from urllib.parse import parse_qsl, urlparse
 
 import environ
 
+from boutique.media import build_storages
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 ROOT_DIR = BASE_DIR.parent
 
@@ -182,14 +184,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# WhiteNoise compresses and fingerprints on collectstatic, so the admin's assets
-# are served with far-future cache headers and no separate web server. This app
-# serves no user-facing static files: product images go to R2, and the storefront
-# is a separate Next.js deployment.
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-}
+STORAGES = build_storages(env)
 
 # Behind Render's proxy, every request arrives over plain HTTP with the original
 # scheme in this header. Without it Django believes the connection is insecure,

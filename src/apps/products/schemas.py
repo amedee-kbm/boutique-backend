@@ -107,3 +107,55 @@ class FacetsSchema(Schema):
     categories: list[CategoryFacetSchema]
     colours: list[FacetValueSchema]
     sizes: list[FacetValueSchema]
+
+
+# ─── Admin write payloads ────────────────────────────────────────────────────
+
+
+class CategoryCreateSchema(Schema):
+    name: str
+    position: int = 0
+
+
+class OptionInSchema(Schema):
+    value: str
+    hex: str = ""
+    position: int = 0
+
+
+class VariantGroupInSchema(Schema):
+    name: str
+    position: int = 0
+    options: list[OptionInSchema] = []
+
+
+class ImageInSchema(Schema):
+    url: str
+    alt: str = ""
+    position: int = 0
+
+
+class ProductCreateSchema(Schema):
+    category_slug: str
+    name: str
+    description: str = ""
+    price: int
+    is_featured: bool = False
+    is_visible: bool = True
+    images: list[ImageInSchema] = []
+    variant_groups: list[VariantGroupInSchema] = []
+
+
+class ProductUpdateSchema(Schema):
+    """Every field optional — only those supplied are changed (PATCH semantics)."""
+
+    category_slug: str | None = None
+    name: str | None = None
+    description: str | None = None
+    price: int | None = None
+    is_featured: bool | None = None
+    is_visible: bool | None = None
+
+
+class ImageUploadSchema(Schema):
+    url: str
