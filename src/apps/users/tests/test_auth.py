@@ -172,13 +172,19 @@ def test_admin_me_admits_a_seller(client: Client, seller: User, bearer: Bearer) 
     assert response.json()["is_seller"] is True
 
 
-def test_create_superuser_is_a_seller(make_user: t.Callable[..., User]) -> None:
-    """`make superuser` must produce an account that can reach the admin API."""
+def test_create_superuser_is_a_platform_admin_not_a_seller() -> None:
+    """A superuser reaches the Django admin, but is a seller only via membership.
+
+    Under multi-tenancy `is_seller` is computed from boutique membership
+    (ADR-0013), so a bare superuser — which has none — is a platform admin and
+    nothing more. The seed is what makes Zita's owner a seller.
+    """
     user = User.objects.create_superuser(
         email="owner@example.com", password=STRONG_PASSWORD, phone_number="+250788000111", name="Owner"
     )
 
-    assert user.is_seller and user.is_staff and user.is_superuser
+    assert user.is_staff and user.is_superuser
+    assert user.is_seller is False
 
 
 # ─── Password reset ──────────────────────────────────────────────────────────

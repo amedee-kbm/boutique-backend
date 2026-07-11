@@ -4,6 +4,8 @@ import re
 from ninja import ModelSchema, Schema
 from pydantic import EmailStr, field_validator
 
+from apps.boutiques.models import Membership
+from apps.boutiques.schemas import BoutiqueRefSchema, MembershipSchema
 from apps.users.models import User
 
 
@@ -39,9 +41,26 @@ class PasswordResetConfirmSchema(Schema):
 
 
 class CurrentUserSchema(ModelSchema):
+    # Both are computed, not columns: `is_seller` is true iff `memberships` is
+    # non-empty. The admin UI reads `memberships` to learn its tenant(s) and
+    # whether to show OWNER-only controls (ADR-0013).
+    is_seller: bool
+    memberships: list[MembershipSchema]
+
     class Meta:
         model = User
-        fields = ["id", "email", "phone_number", "name", "is_seller"]
+        fields = ["id", "email", "phone_number", "name"]
+
+    @staticmethod
+    def resolve_memberships(obj: User) -> list[MembershipSchema]:
+        """The user's boutique memberships, each as a store + role."""
+        return [
+            MembershipSchema(
+                store=BoutiqueRefSchema(slug=m.boutique.slug, name=m.boutique.name),
+                role=Membership.Role(m.role),
+            )
+            for m in obj.memberships.select_related("boutique")
+        ]
 
 
 class AuthResponseSchema(Schema):

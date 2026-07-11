@@ -4,6 +4,7 @@ import typing as t
 import pytest
 from django.test import Client
 
+from apps.boutiques.models import Boutique, Membership
 from apps.users.models import User
 
 API = "/api/v1"
@@ -38,18 +39,20 @@ def make_user() -> t.Callable[..., User]:
         phone_number: str = "+250788123456",
         name: str = "Customer",
         password: str = STRONG_PASSWORD,
-        *,
-        is_seller: bool = False,
     ) -> User:
         return User.objects.create_user(
             email=email,
             password=password,
             name=name,
             phone_number=phone_number,
-            is_seller=is_seller,
         )
 
     return _make
+
+
+@pytest.fixture
+def boutique() -> Boutique:
+    return Boutique.objects.create(slug="zita", name="Zita Boutique")
 
 
 @pytest.fixture
@@ -58,13 +61,19 @@ def customer(make_user: t.Callable[..., User]) -> User:
 
 
 @pytest.fixture
-def seller(make_user: t.Callable[..., User]) -> User:
-    return make_user(
-        email="seller@example.com",
-        phone_number="+250788999888",
-        name="Seller",
-        is_seller=True,
-    )
+def seller(make_user: t.Callable[..., User], boutique: Boutique) -> User:
+    """A seller is a boutique member. This one owns `boutique`."""
+    user = make_user(email="seller@example.com", phone_number="+250788999888", name="Seller")
+    Membership.objects.create(user=user, boutique=boutique, role=Membership.Role.OWNER)
+    return user
+
+
+@pytest.fixture
+def staff(make_user: t.Callable[..., User], boutique: Boutique) -> User:
+    """A staff member of `boutique` — operational access, no governance."""
+    user = make_user(email="staff@example.com", phone_number="+250788777666", name="Staff")
+    Membership.objects.create(user=user, boutique=boutique, role=Membership.Role.STAFF)
+    return user
 
 
 @pytest.fixture

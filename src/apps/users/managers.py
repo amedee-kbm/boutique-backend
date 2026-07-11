@@ -19,14 +19,14 @@ class UserManager(BaseUserManager["User"]):
         return user
 
     def create_superuser(self, email: str, password: str | None = None, **extra_fields: t.Any) -> "User":
-        """Create the seller account.
+        """Create a Django platform administrator.
 
-        `is_seller` is set here on purpose: the only superuser this project has
-        is the shop owner, and the admin API gates on `is_seller`, not on
-        `is_staff`. A superuser who could not reach /admin/me would be useless.
+        This is not a seller. Under multi-tenancy `is_seller` is computed from
+        boutique membership (ADR-0013), so a superuser reaches the *Django admin*
+        but reaches a store's API only once it holds a membership there. The seed
+        gives Zita's owner one; a bare superuser has none.
         """
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("is_seller", True)
 
         return self.create_user(email, password, **extra_fields)

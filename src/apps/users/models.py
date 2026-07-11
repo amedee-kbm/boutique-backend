@@ -11,7 +11,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=13, unique=True)
-    is_seller = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -26,3 +25,13 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def is_seller(self) -> bool:
+        """A seller is anyone who holds a boutique membership (ADR-0013).
+
+        Identity is global and a customer is not a membership, so this is the one
+        signal that a session belongs to someone who runs a shop. It is computed,
+        never stored — being a platform superuser does not make you a seller.
+        """
+        return self.memberships.exists()

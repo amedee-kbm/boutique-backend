@@ -1,5 +1,6 @@
 from ninja_extra import NinjaExtraAPI
 
+from apps.boutiques.controllers.store_admin_controller import StoreAdminController
 from apps.users.controllers.admin_controller import AdminController
 from apps.users.controllers.auth_controller import AuthController
 from apps.users.controllers.users_controller import UserController
@@ -14,4 +15,5 @@ api.register_controllers(
     AuthController,
     UserController,
     AdminController,
+    StoreAdminController,
 )

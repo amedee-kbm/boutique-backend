@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "ninja_extra",
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
+    "apps.boutiques",
     "apps.users",
     "apps.products",
 ]
@@ -109,7 +110,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "boutique.wsgi.application"
-
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases

@@ -1,3 +1,5 @@
+import typing as t
+
 from ninja_extra import ControllerBase, api_controller, http_post
 from ninja_extra.permissions import AllowAny
 from ninja_jwt.controller import TokenBlackListController, TokenObtainPairController
@@ -5,7 +7,6 @@ from ninja_jwt.controller import TokenBlackListController, TokenObtainPairContro
 from apps.users import services
 from apps.users.schemas import (
     AuthResponseSchema,
-    CurrentUserSchema,
     PasswordResetConfirmSchema,
     PasswordResetRequestSchema,
     RegisterSchema,
@@ -39,18 +40,20 @@ class AuthController(
     """
 
     @http_post("/register", response=AuthResponseSchema, auth=None)
-    def register(self, payload: RegisterSchema) -> AuthResponseSchema:
-        """Register a new user and automatically authenticate them."""
+    def register(self, payload: RegisterSchema) -> dict[str, t.Any]:
+        """Register a new user and automatically authenticate them.
+
+        The raw `user` is returned rather than a pre-built `CurrentUserSchema`, so
+        ninja resolves it once against the response schema — the same path `/me`
+        takes, which is what applies the computed `memberships` resolver.
+        """
         user = services.create_user(
             name=payload.name,
             email=payload.email,
             phone_number=payload.phone_number,
             password=payload.password,
         )
-        return AuthResponseSchema(
-            user=CurrentUserSchema.from_orm(user),
-            **services.tokens_for_user(user),
-        )
+        return {"user": user, **services.tokens_for_user(user)}
 
     @http_post("/password/reset-request", response={200: dict}, auth=None)
     def reset_request(self, payload: PasswordResetRequestSchema) -> dict[str, str]:
