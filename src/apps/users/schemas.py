@@ -6,7 +6,7 @@ from pydantic import EmailStr, field_validator
 
 from apps.boutiques.models import Membership
 from apps.boutiques.schemas import BoutiqueRefSchema, MembershipSchema
-from apps.users.models import User
+from apps.users.models import Address, User
 
 
 def _clean_phone(v: str) -> str:
@@ -67,3 +67,16 @@ class AuthResponseSchema(Schema):
     user: CurrentUserSchema
     access: str
     refresh: str
+
+
+class AddressSchema(ModelSchema):
+    class Meta:
+        model = Address
+        fields = ["id", "label", "contact_name", "phone", "address"]
+
+
+class AddressCreateSchema(Schema):
+    label: str = ""
+    contact_name: str
+    phone: str
+    address: str

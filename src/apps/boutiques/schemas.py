@@ -3,6 +3,7 @@ from uuid import UUID
 from ninja import Schema
 
 from apps.boutiques.models import Membership
+from apps.users.models import User
 
 
 class BoutiqueRefSchema(Schema):
@@ -45,3 +46,19 @@ class MemberSchema(Schema):
     def resolve_email(obj: Membership) -> str:
         """The member's email."""
         return obj.user.email
+
+
+class StoreCustomerSchema(Schema):
+    """A customer as an admin sees them: identity plus their activity in this store."""
+
+    id: UUID
+    name: str
+    email: str
+    phone: str
+    order_count: int
+    favorite_count: int
+
+    @staticmethod
+    def resolve_phone(obj: User) -> str:
+        """The customer's phone number."""
+        return obj.phone_number

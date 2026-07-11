@@ -35,3 +35,22 @@ class User(AbstractBaseUser, PermissionsMixin):
         never stored — being a platform superuser does not make you a seller.
         """
         return self.memberships.exists()
+
+
+class Address(models.Model):
+    """A saved delivery address on a customer's account, for order prefill."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="addresses")
+    label = models.CharField(max_length=100, blank=True)
+    contact_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20)
+    address = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "addresses"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.label or self.contact_name} ({self.user_id})"

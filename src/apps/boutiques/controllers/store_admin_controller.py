@@ -3,10 +3,10 @@ import typing as t
 from ninja_extra import api_controller, http_get
 from ninja_jwt.authentication import JWTAuth
 
-from apps.boutiques import services
+from apps.boutiques import selectors, services
 from apps.boutiques.controllers.base import TenantScopedController
 from apps.boutiques.models import Membership
-from apps.boutiques.schemas import BoutiqueRefSchema, MemberSchema, MembershipSchema
+from apps.boutiques.schemas import BoutiqueRefSchema, MemberSchema, MembershipSchema, StoreCustomerSchema
 
 
 @api_controller("/stores/{slug}/admin", auth=JWTAuth(), tags=["Store Admin"])
@@ -33,3 +33,9 @@ class StoreAdminController(TenantScopedController):
         """The boutique's members. OWNER only — managing members is governance."""
         membership = self.require_membership(slug, "manage_members")
         return services.members_of(membership.boutique)
+
+    @http_get("/customers", response=list[StoreCustomerSchema])
+    def customers(self, slug: str) -> t.Any:
+        """Customers with an order or favorite in this store — never the global user table."""
+        membership = self.require_membership(slug, "work_orders")
+        return selectors.store_customers(membership.boutique)
