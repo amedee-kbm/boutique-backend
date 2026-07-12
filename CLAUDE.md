@@ -60,15 +60,15 @@ Two rules govern every gate, and they were paid for
 
 ## The product, in one paragraph
 
-Zita Boutique is a mobile-first fashion storefront for a single seller in Kigali. **It handles
-no money.** A customer builds a Selection, then either places a no-pay order — their items plus
-name, phone and delivery address — which the seller works from an Orders inbox, or opens
-**Tubaze**, a live chat with the seller. Payment and delivery are arranged offline. Prices are
-in RWF. Guests can browse, select, order and chat without an account; an account buys exactly
-one thing, Favorites.
+Zita Boutique is a mobile-first, **multi-tenant** fashion storefront platform for small
+ladies'-clothing sellers — Zita in Kigali is the first. **It handles no money.** A shopper
+browses a boutique, keeps pieces in a device-local **Bag**, and can open **Tubaze** — a live
+customer–seller chat — all without an account. Committing takes a lightweight email/password
+account: placing a no-pay, cash-on-delivery order (the Bag plus name, phone and delivery address)
+that the seller works from an Orders inbox, or **favoriting** a piece. Payment and delivery are
+arranged offline. Prices are in RWF.
 
-[USER_JOURNEYS.md](USER_JOURNEYS.md) is the source of truth for behaviour, and marks which
-backend owns each journey today.
+[USER_JOURNEYS.md](USER_JOURNEYS.md) is the source of truth for behaviour.
 
 ---
 
@@ -77,20 +77,28 @@ backend owns each journey today.
 ```
 src/
 ├── manage.py
-├── boutique/        settings, urls, wsgi, asgi, celery
+├── boutique/        settings, urls, wsgi, asgi, celery, media (R2 storage config)
 ├── apps/
-│   ├── users/       custom User (email login), JWT, IsSeller, password reset
-│   └── products/    scaffold; catalog lands per docs/backend-build.md
+│   ├── users/       custom User (email login), JWT, password reset, saved addresses
+│   ├── boutiques/   Boutique + Membership (tenancy), store-scoped admin, seed_zita
+│   ├── products/    catalog — storefront reads (filter/facet/sort/slug), admin writes, R2 upload
+│   ├── orders/      authenticated placement, server pricing, idempotency, seller inbox
+│   ├── favorites/   account-gated favorites (customer, store, product)
+│   └── push/        one VAPID web-push pipe (order-status + new-arrivals)
 └── api/v1/          NinjaExtraAPI assembly, permissions
 ```
 
-Django 6 · django-ninja-extra · Celery + Redis · Neon Postgres · Python 3.12 · **uv, never pip**.
+Django 6 · django-ninja-extra · Celery + Redis · Neon Postgres · Cloudflare R2 · Python 3.12 ·
+**uv, never pip**.
 
 The settings package is `boutique`, not `config` — `config` is a real PyPI distribution and a
 top-level package by that name shadows it ([ADR-0011](docs/adr/0011-src-layout-and-boutique-package.md)).
 
-**Django is becoming the system of record**, but Supabase still owns chat, realtime, and the
-storefront's data. No cutover is scheduled ([ADR-0001](docs/adr/0001-django-neon-system-of-record.md)).
+**Django is the single system of record** for catalog, orders, favorites, accounts and boutiques.
+Supabase is gone; **Stream** carries chat (no rows persist here) and **Cloudflare R2** holds
+product images ([ADR-0013](docs/adr/0013-django-sole-system-of-record-multi-tenant.md), superseding
+ADR-0001). The platform is **multi-tenant**: a `Boutique` has a public `slug` (in the API path,
+`/api/v1/stores/{slug}/…`) and an internal `store_id` on every domain table.
 
 ---
 
@@ -114,8 +122,17 @@ suite, which is the type checker paying for itself.
 implementation detail. `make task-names` enforces it, and it found a real instance of this bug
 on its first run.
 
-**Authorization is two status codes.** 401 means no valid token — re-authenticate. 403 means a
-valid token belonging to a non-seller — the session is fine, the door is closed. Conflating them
+**Tenancy is not optional.** Every domain table carries a non-nullable `store_id`, and every
+query is scoped to the boutique in the path. A new table without a `store_id` is a tenancy hole —
+treat it like a missing migration. Seller access is a `Membership(user, boutique, role)`;
+`is_seller` is computed (has ≥1 membership). Authorization runs through one
+`has_permission(membership, capability)` choke-point — operational capabilities are open to any
+member, governance (managing members, store settings) is OWNER-only — never a scattered
+`role == OWNER` ([ADR-0013](docs/adr/0013-django-sole-system-of-record-multi-tenant.md)).
+
+**Authorization is three status codes.** 401 means no valid token — re-authenticate. 404 means no
+boutique by that slug. 403 means a valid token whose holder is not a member of this boutique, or is
+a member lacking the capability — the session is fine, the door is closed. Conflating 401 and 403
 sends a signed-in customer into a login loop.
 
 ---
