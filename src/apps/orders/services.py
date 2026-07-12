@@ -10,6 +10,7 @@ from apps.boutiques.models import Boutique
 from apps.orders.models import Order, OrderItem
 from apps.orders.schemas import OrderCreateSchema, OrderItemInSchema
 from apps.products.models import Product, VariantOption
+from apps.push import services as push_services
 from apps.users.models import User
 
 
@@ -77,4 +78,5 @@ def set_status(store: Boutique, order_id: UUID, status: Order.Status) -> Order:
     order = get_object_or_404(Order, store=store, id=order_id)
     order.status = status
     order.save(update_fields=["status", "updated_at"])
+    push_services.notify_order_status(store, order.customer, order_id=order.id, status=order.status)
     return order

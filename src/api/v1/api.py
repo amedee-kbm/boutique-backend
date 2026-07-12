@@ -6,6 +6,8 @@ from apps.orders.controllers.orders_admin_controller import OrdersAdminControlle
 from apps.orders.controllers.orders_controller import OrdersController
 from apps.products.controllers.catalog_admin_controller import CatalogAdminController
 from apps.products.controllers.storefront_controller import StorefrontController
+from apps.push.controllers.push_admin_controller import PushAdminController
+from apps.push.controllers.push_controller import PushController
 from apps.users.controllers.addresses_controller import AddressesController
 from apps.users.controllers.admin_controller import AdminController
 from apps.users.controllers.auth_controller import AuthController
@@ -28,4 +30,6 @@ api.register_controllers(
     OrdersAdminController,
     FavoritesController,
     AddressesController,
+    PushController,
+    PushAdminController,
 )

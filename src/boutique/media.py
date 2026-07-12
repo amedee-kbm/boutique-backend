@@ -39,6 +39,8 @@ def product_image_storage(env: environ.Env) -> dict[str, t.Any]:
             "BACKEND": "django.core.files.storage.InMemoryStorage",
             "OPTIONS": {"base_url": "http://testserver/media/"},
         }
+    # custom_domain must be a bare host — a scheme would double up in the URL.
+    public_host = env.str("R2_PUBLIC_HOST").removeprefix("https://").removeprefix("http://").rstrip("/")
     return {
         "BACKEND": "storages.backends.s3.S3Storage",
         "OPTIONS": {
@@ -46,7 +48,7 @@ def product_image_storage(env: environ.Env) -> dict[str, t.Any]:
             "endpoint_url": env.str("R2_ENDPOINT"),
             "access_key": env.str("R2_ACCESS_KEY_ID"),
             "secret_key": env.str("R2_SECRET_ACCESS_KEY"),
-            "custom_domain": env.str("R2_PUBLIC_HOST"),
+            "custom_domain": public_host,
             "querystring_auth": False,
             "default_acl": None,
             "file_overwrite": False,

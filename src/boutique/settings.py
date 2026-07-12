@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "apps.products",
     "apps.orders",
     "apps.favorites",
+    "apps.push",
 ]
 
 MIDDLEWARE = [
@@ -163,10 +164,8 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# Login is by email (USERNAME_FIELD), so Django's default backend suffices for now.
-AUTHENTICATION_BACKENDS = [
-    "django.contrib.auth.backends.ModelBackend",  # default in Django's global_settings.py, duplicated here for clarity
-]
+# Login is by email (USERNAME_FIELD); Django's default ModelBackend suffices.
+AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -245,3 +244,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
+
+VAPID_PUBLIC_KEY = env.str("VAPID_PUBLIC_KEY", default="")  # web push: one Django-owned pipe (Phase 5)
+VAPID_PRIVATE_KEY = env.str("VAPID_PRIVATE_KEY", default="")
+VAPID_SUBJECT = env.str("VAPID_SUBJECT", default="mailto:hello@zita.example")

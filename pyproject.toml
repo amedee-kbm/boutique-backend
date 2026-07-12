@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "celery[redis]>=5.6.3",
-    "django>=6.0.6",
+    "django>=6.0.7",
     "django-cors-headers>=4.9.0",
     "django-environ>=0.14.0",
     "django-ninja>=1.6.2",
@@ -16,6 +16,7 @@ dependencies = [
     "gunicorn>=23.0.0",
     "psycopg[binary]>=3.3.4",
     "pydantic[email]>=2.13.4",
+    "pywebpush>=2.3.0",
     "whitenoise>=6.11.0",
 ]
 
@@ -97,7 +98,7 @@ disable_error_code = ["django-manager-missing"]
 # Third-party packages that ship no type information. Prune this list when a
 # dependency starts shipping py.typed — do not let it accumulate.
 [[tool.mypy.overrides]]
-module = ["ninja_extra.*", "ninja_jwt.*", "environ.*"]
+module = ["ninja_extra.*", "ninja_jwt.*", "environ.*", "pywebpush.*"]
 ignore_missing_imports = true
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,4 +178,9 @@ ignore_packages = [
     # unavoidable — certifi is the CA bundle behind every HTTPS call in Python.
     "certifi",
     "pathspec",
+    # Web push (Phase 5). pywebpush and its py-vapid dependency are MPL-2.0 — the
+    # same file-level copyleft as above. We import them unmodified and ship no
+    # redistributable binary, so the licence imposes nothing on our source.
+    "pywebpush",
+    "py-vapid",
 ]
