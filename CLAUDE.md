@@ -80,7 +80,7 @@ src/
 ├── boutique/        settings, urls, wsgi, asgi, celery, media (R2 storage config)
 ├── apps/
 │   ├── users/       custom User (email login), JWT, password reset, saved addresses
-│   ├── boutiques/   Boutique + Membership (tenancy), store-scoped admin, seed_zita
+│   ├── boutiques/   Boutique + Membership (tenancy), store-scoped admin
 │   ├── products/    catalog — storefront reads (filter/facet/sort/slug), admin writes, R2 upload
 │   ├── orders/      authenticated placement, server pricing, idempotency, seller inbox
 │   ├── favorites/   account-gated favorites (customer, store, product)

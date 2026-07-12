@@ -177,7 +177,7 @@ def test_create_superuser_is_a_platform_admin_not_a_seller() -> None:
 
     Under multi-tenancy `is_seller` is computed from boutique membership
     (ADR-0013), so a bare superuser — which has none — is a platform admin and
-    nothing more. The seed is what makes Zita's owner a seller.
+    nothing more.
     """
     user = User.objects.create_superuser(
         email="owner@example.com", password=STRONG_PASSWORD, phone_number="+250788000111", name="Owner"

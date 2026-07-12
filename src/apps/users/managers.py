@@ -23,8 +23,7 @@ class UserManager(BaseUserManager["User"]):
 
         This is not a seller. Under multi-tenancy `is_seller` is computed from
         boutique membership (ADR-0013), so a superuser reaches the *Django admin*
-        but reaches a store's API only once it holds a membership there. The seed
-        gives Zita's owner one; a bare superuser has none.
+        but reaches a store's API only once it holds a membership there.
         """
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)

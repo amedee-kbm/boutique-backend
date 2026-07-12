@@ -28,7 +28,7 @@ src/
 ├── boutique/        settings, urls, wsgi, asgi, celery, media (R2 storage config)
 ├── apps/
 │   ├── users/       custom User (email login), JWT, password reset, saved addresses
-│   ├── boutiques/   Boutique + Membership (tenancy), store-scoped admin, seed_zita
+│   ├── boutiques/   Boutique + Membership (tenancy), store-scoped admin
 │   ├── products/    catalog — storefront reads (filter/facet/sort/slug), admin writes, R2 upload
 │   ├── orders/      authenticated placement, server pricing, idempotency, seller inbox
 │   ├── favorites/   account-gated favorites (customer, store, product)
@@ -52,11 +52,6 @@ Fill `DJANGO_SECRET_KEY`, `DATABASE_URL`, the R2 keys and (for web push) the VAP
 — see [.env.example](.env.example). Without an R2 bucket configured, image storage falls back to
 an in-memory backend, so tests and local dev need no cloud credentials.
 
-Seed the first store from the Supabase export (idempotent; re-keys images into R2):
-
-```bash
-uv run python src/manage.py seed_zita --owner-email you@example.com   # --dry-run to preview
-```
 
 ## The contract
 
