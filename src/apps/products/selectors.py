@@ -10,7 +10,6 @@ from django.shortcuts import get_object_or_404
 from apps.boutiques.models import Boutique
 from apps.products.models import Category, Product, ProductImage, VariantOption
 
-# The two axes the storefront facets on. Group names are seeded from these.
 COLOUR = "Colour"
 SIZE = "Size"
 
@@ -144,9 +143,11 @@ def product_facets(store: Boutique, **filters: t.Any) -> Facets:
         .values_list("slug", "name", "n")
     )
     colour_rows = (
+        # Group by value only, then pick one representative hex — otherwise the
+        # same colour with an inconsistent or blank hex splits into two facets.
         VariantOption.objects.filter(store=store, group__name__iexact=COLOUR, group__product__in=ids)
-        .values("value", "hex")
-        .annotate(n=Count("group__product", distinct=True))
+        .values("value")
+        .annotate(n=Count("group__product", distinct=True), hex=Max("hex"))
         .order_by("value")
     )
     size_rows = (

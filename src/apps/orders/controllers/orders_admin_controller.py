@@ -21,10 +21,16 @@ class OrdersAdminController(TenantScopedController):
     """
 
     @http_get("", response=list[OrderListItemSchema])
-    def inbox(self, slug: str, since: AwareDatetime | None = None, status: Order.Status | None = None) -> t.Any:
-        """Every order at the store, newest first; filter by status or a since cursor."""
+    def inbox(
+        self,
+        slug: str,
+        since: AwareDatetime | None = None,
+        since_id: UUID | None = None,
+        status: Order.Status | None = None,
+    ) -> t.Any:
+        """Every order at the store, newest first; filter by status or a (since, since_id) cursor."""
         membership = self.require_membership(slug, "work_orders")
-        return selectors.inbox(membership.boutique, since=since, status=status)
+        return selectors.inbox(membership.boutique, since=since, since_id=since_id, status=status)
 
     @http_get("/{order_id}", response=OrderSchema)
     def detail(self, slug: str, order_id: UUID) -> Order:

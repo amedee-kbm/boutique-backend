@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from ninja.errors import HttpError
 
@@ -45,31 +45,42 @@ def _add_line(order: Order, store: Boutique, item: OrderItemInSchema) -> int:
     return product.price * item.quantity
 
 
-@transaction.atomic
+def _existing_order(store: Boutique, customer: User, key: str) -> Order | None:
+    return Order.objects.filter(store=store, customer=customer, idempotency_key=key).first()
+
+
 def place_order(store: Boutique, customer: User, payload: OrderCreateSchema) -> tuple[Order, bool]:
     """Place an order, or return the existing one for a repeated idempotency key.
 
     Returns (order, created). A replay of a key this customer already used at
-    this store returns their first order untouched — never a duplicate.
+    this store returns their first order untouched — never a duplicate. The
+    fast-path check races against a concurrent double-submit, so the unique
+    constraint is the real gate: if two requests slip past the check together,
+    the loser's INSERT raises IntegrityError and we return the winner's order
+    rather than 500. The order and its lines commit as one savepoint.
     """
-    existing = Order.objects.filter(store=store, customer=customer, idempotency_key=payload.idempotency_key).first()
+    existing = _existing_order(store, customer, payload.idempotency_key)
     if existing is not None:
         return existing, False
 
     if not payload.items:
         raise HttpError(400, "An order needs at least one item.")
 
-    order = Order.objects.create(
-        store=store,
-        customer=customer,
-        idempotency_key=payload.idempotency_key,
-        contact_name=payload.contact_name,
-        phone=payload.phone,
-        delivery_address=payload.delivery_address,
-        note=payload.note,
-    )
-    order.total = sum(_add_line(order, store, item) for item in payload.items)
-    order.save(update_fields=["total"])
+    try:
+        with transaction.atomic():
+            order = Order.objects.create(
+                store=store,
+                customer=customer,
+                idempotency_key=payload.idempotency_key,
+                contact_name=payload.contact_name,
+                phone=payload.phone,
+                delivery_address=payload.delivery_address,
+                note=payload.note,
+            )
+            order.total = sum(_add_line(order, store, item) for item in payload.items)
+            order.save(update_fields=["total"])
+    except IntegrityError:
+        return Order.objects.get(store=store, customer=customer, idempotency_key=payload.idempotency_key), False
     return order, True
 
 

@@ -7,9 +7,10 @@ from uuid import UUID
 
 from django.core.files.storage import storages
 from django.core.files.uploadedfile import UploadedFile
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
+from ninja.errors import HttpError
 
 from apps.boutiques.models import Boutique
 from apps.products.models import Category, Product, ProductImage, VariantGroup, VariantOption
@@ -31,11 +32,28 @@ def create_category(store: Boutique, *, name: str, position: int = 0) -> Categor
     return Category.objects.create(store=store, name=name, slug=slug, position=position)
 
 
-@transaction.atomic
 def create_product(store: Boutique, payload: ProductCreateSchema) -> Product:
-    """Create a product with its images and variant axes in one transaction."""
+    """Create a product with its images and variant axes, atomically.
+
+    Slug generation is check-then-insert, so a concurrent create of the same name
+    can collide on the store/slug constraint; on that collision we recompute the
+    slug (now seeing the winner's) and retry rather than 500.
+    """
     category = get_object_or_404(Category, store=store, slug=payload.category_slug)
-    slug = _unique_slug(lambda s: Product.objects.filter(store=store, slug=s).exists(), payload.name)
+    for _ in range(5):
+        slug = _unique_slug(lambda s: Product.objects.filter(store=store, slug=s).exists(), payload.name)
+        try:
+            with transaction.atomic():
+                return _build_product(store, category, slug, payload)
+        except IntegrityError:
+            if Product.objects.filter(store=store, slug=slug).exists():
+                continue  # lost the slug race — recompute and retry
+            raise  # a different constraint (e.g. a duplicate axis within the payload)
+    raise HttpError(409, "Could not place the product; please retry.")
+
+
+def _build_product(store: Boutique, category: Category, slug: str, payload: ProductCreateSchema) -> Product:
+    """Insert the product, its images, and its variant axes. Caller owns the transaction."""
     product = Product.objects.create(
         store=store,
         category=category,

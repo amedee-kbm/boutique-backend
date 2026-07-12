@@ -2,7 +2,7 @@
 import re
 
 from ninja import ModelSchema, Schema
-from pydantic import EmailStr, field_validator
+from pydantic import EmailStr, Field, field_validator
 
 from apps.boutiques.models import Membership
 from apps.boutiques.schemas import BoutiqueRefSchema, MembershipSchema
@@ -40,6 +40,19 @@ class PasswordResetConfirmSchema(Schema):
     password: str
 
 
+def _memberships(user: User) -> list[Membership]:
+    """The user's memberships, fetched once and cached on the instance.
+
+    `is_seller` and `memberships` both need the same rows; caching here collapses
+    them to a single query per serialization instead of one apiece.
+    """
+    cached = getattr(user, "_membership_list", None)
+    if cached is None:
+        cached = list(user.memberships.select_related("boutique"))
+        user._membership_list = cached  # type: ignore[attr-defined]
+    return cached
+
+
 class CurrentUserSchema(ModelSchema):
     # Both are computed, not columns: `is_seller` is true iff `memberships` is
     # non-empty. The admin UI reads `memberships` to learn its tenant(s) and
@@ -52,6 +65,11 @@ class CurrentUserSchema(ModelSchema):
         fields = ["id", "email", "phone_number", "name"]
 
     @staticmethod
+    def resolve_is_seller(obj: User) -> bool:
+        """True iff the user holds any boutique membership."""
+        return bool(_memberships(obj))
+
+    @staticmethod
     def resolve_memberships(obj: User) -> list[MembershipSchema]:
         """The user's boutique memberships, each as a store + role."""
         return [
@@ -59,7 +77,7 @@ class CurrentUserSchema(ModelSchema):
                 store=BoutiqueRefSchema(slug=m.boutique.slug, name=m.boutique.name),
                 role=Membership.Role(m.role),
             )
-            for m in obj.memberships.select_related("boutique")
+            for m in _memberships(obj)
         ]
 
 
@@ -76,7 +94,7 @@ class AddressSchema(ModelSchema):
 
 
 class AddressCreateSchema(Schema):
-    label: str = ""
-    contact_name: str
-    phone: str
-    address: str
+    label: str = Field(default="", max_length=100)
+    contact_name: str = Field(max_length=255)
+    phone: str = Field(max_length=20)
+    address: str = Field(max_length=1000)

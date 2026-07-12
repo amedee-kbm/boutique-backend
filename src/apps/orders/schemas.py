@@ -13,11 +13,13 @@ class OrderItemInSchema(Schema):
 
 
 class OrderCreateSchema(Schema):
-    idempotency_key: str
-    contact_name: str
-    phone: str
-    delivery_address: str
-    note: str = ""
+    # Bounds match the columns, so oversized input is a 422 at the boundary, not
+    # a 500 on the varchar limit.
+    idempotency_key: str = Field(max_length=255)
+    contact_name: str = Field(max_length=255)
+    phone: str = Field(max_length=20)
+    delivery_address: str = Field(max_length=1000)
+    note: str = Field(default="", max_length=500)
     items: list[OrderItemInSchema]
 
 

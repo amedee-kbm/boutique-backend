@@ -109,6 +109,21 @@ def test_create_product_generates_a_unique_slug(
     assert second.json()["slug"] == "new-gown-2"
 
 
+def test_create_product_retries_on_a_slug_race(
+    monkeypatch: pytest.MonkeyPatch, dresses: Category, boutique: Boutique
+) -> None:
+    """A slug that collides at insert time (concurrent create) is recomputed and retried."""
+    from apps.products import services
+    from apps.products.schemas import ProductCreateSchema
+
+    Product.objects.create(store=boutique, category=dresses, name="New Gown", slug="new-gown", price=1000)
+    slugs = iter(["new-gown", "new-gown-2"])  # first attempt collides with the row above
+    monkeypatch.setattr(services, "_unique_slug", lambda taken, name: next(slugs))
+
+    product = services.create_product(boutique, ProductCreateSchema(**_product_payload()))
+    assert product.slug == "new-gown-2"
+
+
 def test_create_product_unknown_category_is_404(client: Client, seller: User, bearer: Bearer) -> None:
     payload = _product_payload(category_slug="nope")
     r = client.post(f"{ADMIN}/products", json.dumps(payload), "application/json", headers=bearer(seller))

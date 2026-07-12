@@ -141,6 +141,17 @@ def test_facets_report_count_price_and_axes(client: Client, catalog: dict[str, C
     assert {s["value"] for s in facets["sizes"]} == {"S", "M", "L"}
 
 
+def test_facets_dedupe_a_colour_with_inconsistent_hex(client: Client, boutique: Boutique) -> None:
+    """Same colour value, different (or blank) hex across products, is one facet entry."""
+    dresses = Category.objects.create(store=boutique, name="Dresses", slug="dresses")
+    make_product(boutique, category=dresses, name="A", slug="a", price=10000, colours=[("Red", "#FF0000")])
+    make_product(boutique, category=dresses, name="B", slug="b", price=12000, colours=[("Red", "")])
+
+    reds = [c for c in client.get(f"{CATALOG}/facets").json()["colours"] if c["value"] == "Red"]
+    assert len(reds) == 1
+    assert reds[0]["count"] == 2
+
+
 def test_facets_narrow_with_the_active_filter(client: Client, catalog: dict[str, Category]) -> None:
     facets = client.get(f"{CATALOG}/facets", {"category": "shoes"}).json()
     assert facets["count"] == 1

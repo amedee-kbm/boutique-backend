@@ -4,8 +4,10 @@ import typing as t
 
 import pytest
 from django.test import Client
+from django.utils import timezone
 
 from apps.boutiques.models import Boutique
+from apps.orders import selectors
 from apps.orders.models import Order
 from apps.products.models import Category, Product, ProductImage, VariantGroup, VariantOption
 from apps.users.models import User
@@ -87,6 +89,65 @@ def test_idempotency_key_returns_the_first_order(
     assert second.status_code == 200  # replay, not a new order
     assert first.json()["id"] == second.json()["id"]
     assert Order.objects.count() == 1
+
+
+def test_idempotency_survives_a_concurrent_race(
+    client: Client,
+    post_json: PostJson,
+    boutique: Boutique,
+    customer: User,
+    bearer: Bearer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the fast-path check misses (concurrent double-submit), the unique constraint
+    catches it and the first order is returned — not a 500."""
+    product, red, medium = make_product(boutique)
+    first = post_json(
+        client, "/stores/zita/orders", order_payload(product, [red], key="race"), headers=bearer(customer)
+    )
+    assert first.status_code == 201
+
+    # Simulate the race: the existence check returns None though the row exists.
+    monkeypatch.setattr("apps.orders.services._existing_order", lambda *a, **k: None)
+    second = post_json(
+        client, "/stores/zita/orders", order_payload(product, [red], key="race"), headers=bearer(customer)
+    )
+
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert Order.objects.count() == 1
+
+
+def test_oversized_contact_name_is_rejected(
+    client: Client, post_json: PostJson, boutique: Boutique, customer: User, bearer: Bearer
+) -> None:
+    """Input past the column limit is a 422 at the boundary, not a 500 on the DB."""
+    product, red, medium = make_product(boutique)
+    payload = order_payload(product, [red], key="big")
+    payload["contact_name"] = "x" * 300
+
+    assert post_json(client, "/stores/zita/orders", payload, headers=bearer(customer)).status_code == 422
+    assert Order.objects.count() == 0
+
+
+def test_inbox_cursor_breaks_timestamp_ties(boutique: Boutique, customer: User) -> None:
+    """Two orders sharing a created_at: (since, since_id) returns the sibling, not neither."""
+    kwargs = {
+        "store": boutique,
+        "customer": customer,
+        "contact_name": "A",
+        "phone": "+250788112233",
+        "delivery_address": "X",
+    }
+    o1 = Order.objects.create(idempotency_key="a", **kwargs)
+    o2 = Order.objects.create(idempotency_key="b", **kwargs)
+    tie = timezone.now()
+    Order.objects.filter(id__in=[o1.id, o2.id]).update(created_at=tie)
+
+    seen, unseen = sorted([o1, o2], key=lambda o: o.id)
+    result = list(selectors.inbox(boutique, since=tie, since_id=seen.id))
+
+    assert [o.id for o in result] == [unseen.id]
 
 
 def test_option_from_another_product_is_rejected(
