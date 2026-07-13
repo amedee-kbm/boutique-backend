@@ -41,7 +41,7 @@ jobs:
       DATABASE_URL: postgresql://boutique:boutique@localhost:55432/boutique
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -96,7 +96,7 @@ jobs:
       DATABASE_URL: postgresql://boutique:boutique@localhost:55432/boutique
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
