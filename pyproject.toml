@@ -28,17 +28,17 @@ dev = [
     "celery-types>=0.24.0",
     "coverage>=7.13.3",
     "django-stubs[compatible-mypy]>=5.2.9",
-    "faker>=40.1.2",
+    "faker>=40.36.0",
     "freezegun>=1.5.5",
     "licensecheck>=2025.1.0",
-    "mypy>=1.19.1",
+    "mypy>=2.3.0",
     "pip-audit>=2.10.0",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-django>=4.11.1",
     "pytest-xdist>=3.8.0",
     "pyyaml>=6.0.3",
-    "ruff>=0.15.20",
+    "ruff>=0.16.0",
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
