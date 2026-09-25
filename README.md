@@ -1,7 +1,7 @@
-# Zita Boutique — backend
+# Btq. — backend
 
-Zita Boutique is a mobile-first, **multi-tenant** storefront platform for small ladies'-clothing
-sellers — Zita in Kigali is the first. **It handles no money.** A shopper browses a boutique,
+Btq. is a mobile-first, **multi-tenant** storefront platform for small ladies'-clothing
+sellers — Btq. in Kigali is the first. **It handles no money.** A shopper browses a boutique,
 keeps pieces in a device-local **Bag**, and can open **Tubaze** — a live customer–seller chat —
 all without an account. Committing takes a lightweight email/password account: placing a no-pay,
 cash-on-delivery **order** (the Bag plus name, phone and delivery address) that lands in the
